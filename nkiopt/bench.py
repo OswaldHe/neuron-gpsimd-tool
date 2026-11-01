@@ -138,7 +138,10 @@ def run(case, d, nsites, inputs, ref, iters, repeats, out_names):
             if gp_line:
                 print("   " + gp_line[0])
         s = total_exec_time(os.path.join(d, "final.neff"), ntff)
-        os.remove(ntff)
+        if os.environ.get("KEEP_NTFF") and r == repeats - 1:
+            os.replace(ntff, os.path.join(d, "profile.ntff"))   # the last repeat's profile, for neuron-explorer
+        else:
+            os.remove(ntff)
         samples.append(s["total_exec_time"] * 1e6)
         summ = s
         print(f"    repeat {r}: total_exec_time {samples[-1]:9.3f} us")

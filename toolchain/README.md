@@ -255,6 +255,7 @@ Float-heavy operators are now bound by soft-float arithmetic (~100–300 cycles 
 * The data RAM budget per library is ~8 KB (`--log-size` controls the log ring, default 1 KB).
 * The iDMA channel is shared with the firmware (library loading); only the runtime's gp_dma_* functions
   restore its state correctly — do not program the iDMA registers directly.
-* Pool programs with control-flow instructions are not supported by the injector. If the scheduler puts a
-  native GpSimd instruction inside a call site that depends on it, injection stops with an error.
+* Pool programs with dynamic control flow are supported only when every call site precedes the first block
+  boundary (see "Dynamic control flow"). If the scheduler puts a native GpSimd instruction inside a call site
+  that depends on it, injection stops with an error.
 * The NEFF must have a single subgraph; one NeuronCore (`NEURON_RT_VISIBLE_CORES`).
