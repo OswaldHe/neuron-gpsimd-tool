@@ -1,0 +1,487 @@
+#!/usr/bin/env python3
+"""gpsimd-neff - resolve GPSIMD call sites in an NKI-compiled trn3 NEFF and inject KERNEL_CALLs.
+
+  gpsimd-neff analyze <kernel.neff> <sites.json> -o <sites_resolved.json>
+      Find the markers emitted by gpsimd_nki.call() (see python/gpsimd_nki.py) and resolve every call
+      site's tiles: first SBUF partition, partition count, byte offset inside the partition, dtype and
+      free-dimension access pattern ([step, count] in elements, innermost first).
+  gpsimd-neff inject <kernel.neff> <sites_resolved.json> <ops.so> -o <out.neff>
+      Add the operator library, one gpsimd_kernels_def entry "<kernel>__s<site>" per call site, and
+      replace each site's markers by one KERNEL_CALL (at the position of the site's first output marker):
+        * markers become EVENT_SEMAPHOREs that keep their waits (waits on markers of the same site
+          are dropped; program order already orders them)
+        * the KERNEL_CALL adds the sum of the site markers' semaphore increments on completion
+        * every wait on the Pool completion semaphore, in all engine programs, is renumbered: it now
+          waits for the same instruction as before, and additionally for the KERNEL_CALL of every call
+          site that had a marker at or before that instruction (Pool completes in order, so waiting
+          for an instruction used to imply that all earlier markers had completed).
+  gpsimd-neff dump <kernel.neff> [engine]
+      Print the instruction headers of an engine program (pool, act, dve, pe, sp; default pool).
+"""
+import gzip
+import hashlib
+import io
+import json
+import os
+import struct
+import sys
+import tarfile
+
+SLOT = 64
+OP_KERNEL_CALL, OP_EVENT_SEMAPHORE, OP_TENSOR_SCALAR, OP_MEMSET = 0x85, 0xA0, 0x43, 0x49
+CONTROL_FLOW = {0xA9, 0xB5, 0xCC, 0xD2, 0xD3, 0xDD}
+OP_BRANCH_LABEL, OP_LABEL, OP_JUMP_ABS, OP_SEMA_RESET = 0xA9, 0xCC, 0xDD, 0xB0
+SUPPORTED_FLOW = {OP_BRANCH_LABEL, OP_LABEL, OP_JUMP_ABS}
+DTYPE = {0x02: ("int8", 1), 0x03: ("uint8", 1), 0x04: ("int16", 2), 0x05: ("uint16", 2), 0x06: ("bfloat16", 2),
+         0x07: ("float16", 2), 0x08: ("int32", 4), 0x09: ("uint32", 4), 0x0A: ("float32", 4)}
+PART_STRIDE = 0x40000
+WAIT_GE = 5
+INC_MODES = {3: "inc", 19: "inc", 5: "add", 21: "add"}
+UPD_INC_COMPLETE, UPD_ADD_COMPLETE = 19, 21
+ENGINE_KEYS = {"pool": "pool_instr", "act": "act_instr", "dve": "dve_instr", "pe": "pe_instr", "sp": "sp_instr"}
+MARK = 1 << 20
+ROLE_START, ROLE_TOUCH, ROLE_CHAIN, ROLE_FILL, ROLE_SCHAIN, ROLE_JOIN, ROLE_ORDER = range(7)
+ROLE_NAMES = ["start", "touch", "chain", "fill", "schain", "join", "order"]
+EFFECTIVE = {ROLE_TOUCH, ROLE_FILL, ROLE_JOIN}      # markers whose memory effect other instructions may depend on
+
+
+# ------------------------------------------------------------------ container
+def read_neff(path):
+    raw = open(path, "rb").read()
+    header, payload = bytearray(raw[:1024]), raw[1024:]
+    members = []
+    with tarfile.open(fileobj=io.BytesIO(gzip.decompress(payload)), mode="r:") as tf:
+        for m in tf.getmembers():
+            if m.isfile():
+                members.append([m.name, tf.extractfile(m).read()])
+    return header, members
+
+
+def write_neff(path, header, members):
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w", format=tarfile.USTAR_FORMAT) as tf:
+        for name, data in members:
+            ti = tarfile.TarInfo(name)
+            ti.size, ti.mode, ti.mtime = len(data), 0o644, 0
+            tf.addfile(ti, io.BytesIO(data))
+    payload = gzip.compress(buf.getvalue(), compresslevel=1, mtime=0)
+    md5 = hashlib.md5(payload).digest()
+    struct.pack_into("<Q", header, 0x10, len(payload))
+    header[0xAC:0xBC] = md5
+    header[0xCC:0xDC] = md5
+    open(path, "wb").write(bytes(header) + payload)
+
+
+class Neff:
+    def __init__(self, path):
+        self.header, self.members = read_neff(path)
+        self.idx = {n: i for i, (n, _) in enumerate(self.members)}
+        sg = sorted({n.split("/")[0] for n in self.idx if n.startswith("sg") and n.endswith("/def.json")})
+        if len(sg) != 1:
+            raise SystemExit(f"expected exactly one subgraph, found {sg}")
+        self.sg = sg[0]
+        self.defj = json.loads(self.get("def.json"))
+        self.engines = {}
+        for eng, key in ENGINE_KEYS.items():
+            f = self.defj.get(key)
+            if f:
+                b = self.get(f)
+                self.engines[eng] = [bytearray(b[i:i + SLOT]) for i in range(0, len(b), SLOT)]
+
+    def get(self, name):
+        return self.members[self.idx[f"{self.sg}/{name}"]][1]
+
+    def put(self, name, data):
+        full = f"{self.sg}/{name}"
+        if full in self.idx:
+            self.members[self.idx[full]][1] = data
+        else:
+            self.idx[full] = len(self.members)
+            self.members.append([full, data])
+
+    def save(self, path):
+        for eng, key in ENGINE_KEYS.items():
+            if eng in self.engines:
+                self.put(self.defj[key], b"".join(bytes(s) for s in self.engines[eng]))
+        write_neff(path, self.header, self.members)
+
+
+u16 = lambda s, o: struct.unpack_from("<H", s, o)[0]
+s16 = lambda s, o: struct.unpack_from("<h", s, o)[0]
+u32 = lambda s, o: struct.unpack_from("<I", s, o)[0]
+f32 = lambda s, o: struct.unpack_from("<f", s, o)[0]
+wait_of = lambda s: (s[4], s[5], u32(s, 8))
+upd_of = lambda s: (s[6], s[7])
+
+
+def increment(s, sem):
+    mode, idx = upd_of(s)
+    if idx != sem or mode not in INC_MODES:
+        return 0
+    return 1 if INC_MODES[mode] == "inc" else u32(s, 8)
+
+
+# ------------------------------------------------------------------ markers
+def untag(v):
+    """float tag -> (site, role, arg, chunk) or None."""
+    if v != int(v) or v < MARK:
+        return None
+    t = int(v) - MARK
+    return t // 4096, (t % 4096) // 512, (t % 512) // 32, t % 32
+
+
+def ts_operands(x):
+    """Decoded TENSOR_SCALAR (0x43) operands."""
+    return dict(src=u32(x, 16), src_steps=[s16(x, 20 + 2 * k) for k in range(3)], src_nums=[u16(x, 26 + 2 * k) for k in range(3)],
+                in_dtype=x[32], out_dtype=x[33], channels=x[34], imm0_ptr=bool(x[35] & 1), op0=x[36], op1=x[37],
+                imm0=u32(x, 40), imm1=f32(x, 44), dst=u32(x, 48),
+                dst_steps=[s16(x, 52 + 2 * k) for k in range(3)], dst_nums=[u16(x, 58 + 2 * k) for k in range(3)])
+
+
+def scan_markers(pool):
+    """{(site, role, arg, chunk): instruction index} for every tagged marker in the Pool program."""
+    found = {}
+    for i, x in enumerate(pool):
+        key = None
+        if x[0] == OP_MEMSET:
+            t = untag(f32(x, 40))
+            if t and t[1] == ROLE_START:
+                key = t
+        elif x[0] == OP_TENSOR_SCALAR and x[37] == 4:            # op1 = add with an immediate tag
+            t = untag(f32(x, 44))
+            if t and ROLE_TOUCH <= t[1] <= ROLE_ORDER:
+                key = t
+        if key:
+            if key in found:
+                raise SystemExit(f"marker {key} found twice (Pool instructions {found[key]} and {i})")
+            found[key] = i
+    return found
+
+
+def tile_desc(x, meta, which):
+    """Tile descriptor (destination operand) of a touch / join / fill marker."""
+    o = ts_operands(x)
+    addr, code = o["dst"], o["out_dtype"]
+    dims = [[st, n] for st, n in zip(o["dst_steps"], o["dst_nums"])]
+    while len(dims) > 1 and dims[-1][1] == 1:
+        dims.pop()
+    merged = [list(dims[0])]                       # merge dims that are dense in memory: [[1,128],[128,64]] -> [[1,8192]]
+    for st, n in dims[1:]:
+        if st == merged[-1][0] * merged[-1][1]:
+            merged[-1][1] *= n
+        else:
+            merged.append([st, n])
+    dims = merged
+    shape_free = meta["shape"][1:] or [1]
+    if _prod(d[1] for d in dims) != _prod(shape_free):
+        raise SystemExit(f"{which}: access pattern {dims} does not match shape {meta['shape']}")
+    name, size = DTYPE.get(code, (f"code{code}", 0))
+    if name != meta["dtype"]:
+        raise SystemExit(f"{which}: dtype {name} in the NEFF, {meta['dtype']} in sites.json")
+    return dict(part0=addr // PART_STRIDE, nparts=o["channels"], offset=addr % PART_STRIDE, dtype=name,
+                dtype_code=code, elem_bytes=size, dims=dims, elems=_prod(d[1] for d in dims))
+
+
+def _prod(xs):
+    r = 1
+    for x in xs:
+        r *= x
+    return r
+
+
+def merge_chunks(descs, meta, which):
+    """Merge the partition chunks of a tile; the first chunk may start below the view (rel_start < 0)."""
+    d0 = dict(descs[0])
+    p = d0["part0"]
+    for d, (rel, size) in zip(descs, meta["chunks"]):
+        if d["part0"] != p or d["offset"] != d0["offset"] or d["dims"] != d0["dims"] or d["nparts"] != size:
+            raise SystemExit(f"{which}: partition chunks are not contiguous ({descs})")
+        p += d["nparts"]
+    d0["part0"] -= meta["chunks"][0][0]
+    d0["nparts"] = p - d0["part0"]
+    if d0["nparts"] != meta["shape"][0]:
+        raise SystemExit(f"{which}: {d0['nparts']} partitions in the NEFF, shape {meta['shape']} in sites.json")
+    return d0
+
+
+def find_sites(pool, meta):
+    found = scan_markers(pool)
+    sites = []
+    for site in meta["sites"]:
+        s = site["site"]
+        name = f"site {s} ({site['kernel']})"
+        need = [(s, ROLE_START, 0, 0), (s, ROLE_FILL, 0, 0), (s, ROLE_SCHAIN, 0, 0)]
+        for k, t in enumerate(site["ins"]):
+            for c in range(len(t["chunks"])):
+                need += [(s, ROLE_TOUCH, k, c), (s, ROLE_CHAIN, k, c)]
+        for j, t in enumerate(site["outs"]):
+            for c in range(len(t["chunks"])):
+                need.append((s, ROLE_JOIN, j, c))
+        missing = [k for k in need if k not in found]
+        if missing:
+            roles = ", ".join(f"{ROLE_NAMES[r]}(arg {a}, chunk {c})" for _, r, a, c in missing)
+            raise SystemExit(f"{name}: markers missing from the compiled NEFF: {roles}.\n"
+                             f"  (an output that is never read is removed by the compiler; read every output tile)")
+        ins = [merge_chunks([tile_desc(pool[found[(s, ROLE_TOUCH, k, c)]], t, f"{name} input {k}")
+                             for c in range(len(t["chunks"]))], t, f"{name} input {k}") for k, t in enumerate(site["ins"])]
+        outs = [merge_chunks([tile_desc(pool[found[(s, ROLE_JOIN, j, c)]], t, f"{name} output {j}")
+                              for c in range(len(t["chunks"]))], t, f"{name} output {j}") for j, t in enumerate(site["outs"])]
+        scratch = tile_desc(pool[found[(s, ROLE_FILL, 0, 0)]], site["scratch"], f"{name} scratch")
+        markers = {i: k for k, i in found.items() if k[0] == s}
+        sites.append(dict(site=s, kernel=site["kernel"], entry=f"{site['kernel']}__s{s}", ins=ins, outs=outs,
+                          scratch=scratch, markers=sorted(markers),
+                          effective=sorted(i for i, k in markers.items() if k[1] in EFFECTIVE)))
+    extra = sorted({k[0] for k in found} - {st["site"] for st in sites})
+    if extra:
+        raise SystemExit(f"markers of unknown call sites {extra} (sites.json does not belong to this NEFF?)")
+    return sites
+
+
+def cmd_analyze(neff_path, sites_path, out):
+    nf = Neff(neff_path)
+    meta = json.load(open(sites_path))
+    sites = find_sites(nf.engines["pool"], meta)
+    json.dump({"neff": os.path.abspath(neff_path), "sites": sites}, open(out, "w"), indent=1)
+    for st in sites:
+        m = st["markers"]
+        print(f"site {st['site']}: {st['entry']}  ({len(m)} markers, Pool instructions {m[0]}..{m[-1]})")
+        for kind in ("ins", "outs"):
+            for k, t in enumerate(st[kind]):
+                print(f"   {kind[:-1]:3s} {k}: partitions {t['part0']}..{t['part0'] + t['nparts'] - 1}, offset 0x{t['offset']:05x}, "
+                      f"{t['dtype']}, free dims {t['dims']}")
+        t = st["scratch"]
+        print(f"   scratch: partition {t['part0']}, offset 0x{t['offset']:05x}, {t['elems']} x {t['dtype']}")
+
+
+# ------------------------------------------------------------------ injection
+def cmd_inject(neff_path, resolved_path, lib, out):
+    nf = Neff(neff_path)
+    res = json.load(open(resolved_path))
+    sites = res["sites"]
+    pool = nf.engines["pool"]
+    # Dynamic control flow (nl.fori_loop / nl.while over a register): the compiler splits the program into blocks;
+    # at every block boundary each engine drains, barriers and resets its semaphores (OP_SEMA_RESET), branches go
+    # to labels (OP_LABEL ids, position independent) except the unconditional jump OP_JUMP_ABS, whose target is an
+    # absolute instruction index. Supported when every call site lies in the first block of the Pool program:
+    # waits are renumbered only before each engine's first reset, and OP_JUMP_ABS targets are relocated.
+    bad = sorted({hex(x[0]) for x in pool if x[0] in CONTROL_FLOW - SUPPORTED_FLOW})
+    if bad:
+        raise SystemExit(f"Pool program contains unsupported control flow ({bad})")
+    first_reset = {eng: next((i for i, x in enumerate(prog) if x[0] == OP_SEMA_RESET), len(prog))
+                   for eng, prog in nf.engines.items()}
+    if any(x[0] in CONTROL_FLOW for x in pool[:first_reset["pool"]]):
+        raise SystemExit("Pool program branches before its first block boundary; not supported by the injector")
+    late = [st["site"] for st in sites if max(st["markers"]) >= first_reset["pool"]]
+    if late:
+        raise SystemExit(f"GPSIMD call site(s) {late} lie after the Pool program's first block boundary (instruction "
+                         f"{first_reset['pool']}, a dynamic loop or branch): place gp.call before any nl.fori_loop")
+    marker_of = {}
+    for st in sites:
+        for i in st["markers"]:
+            if i in marker_of:
+                raise SystemExit(f"Pool instruction {i} is a marker of two sites")
+            if pool[i][0] not in (OP_MEMSET, OP_TENSOR_SCALAR):
+                raise SystemExit(f"site {st['site']}: instruction {i} is not a marker (resolved file stale?)")
+            marker_of[i] = st["site"]
+
+    # the semaphore the markers increment = Pool's completion semaphore
+    usems = {pool[i][7] for i in marker_of if upd_of(pool[i])[0] in INC_MODES}
+    if len(usems) > 1:
+        raise SystemExit(f"markers update several semaphores {usems}")
+    U = usems.pop() if usems else 3
+    for eng, prog in nf.engines.items():
+        for i, x in enumerate(prog):
+            if x[7] == U and x[6] and upd_of(x)[0] not in INC_MODES:
+                raise SystemExit(f"{eng} {i}: non-increment update (mode {x[6]}) of S[{U}]")
+            if eng != "pool" and increment(x, U):
+                raise SystemExit(f"engine {eng} also increments S[{U}]; cannot renumber waits")
+
+    # the KERNEL_CALL takes the place of the site's first output (join) marker: every join marker depends on
+    # the scratch chain, so all input / fill markers precede it, and a Pool instruction that the scheduler put
+    # between two join markers (e.g. descriptor generation reading output 0) then runs after the call
+    def role(i):
+        return untag(f32(pool[i], 44))[1] if pool[i][0] == OP_TENSOR_SCALAR and untag(f32(pool[i], 44)) else None
+
+    kc_of = {}
+    for st in sites:
+        joins = [i for i in st["markers"] if role(i) == ROLE_JOIN]
+        if not joins:
+            raise SystemExit(f"site {st['site']}: no output marker found")
+        kc_of[st["site"]] = min(joins)
+    eff_first = sorted((min(st["effective"]), st["site"]) for st in sites)      # first effective marker per site
+    inc = [increment(x, U) for x in pool]
+    orig_cum, c = [], 0
+    for v in inc:
+        c += v
+        orig_cum.append(c)
+    fill_of = {}
+    for st in sites:
+        fills = [i for i in st["markers"] if pool[i][0] == OP_TENSOR_SCALAR and untag(f32(pool[i], 44))[1] == ROLE_FILL]
+        if len(fills) != 1 or fills[0] == kc_of[st["site"]]:
+            raise SystemExit(f"site {st['site']}: scratch fill marker not found")
+        fill_of[st["site"]] = fills[0]
+
+    # GPSIMD cores execute Pool instructions independently (each core takes its share of partitions), and
+    # Pool instructions are ordered by completion semaphores, not by program order. The scratch memset
+    # therefore increments the semaphore and the KERNEL_CALL waits for it.
+    new_inc = list(inc)
+    for st in sites:
+        tot = sum(inc[i] for i in st["markers"])
+        for i in st["markers"]:
+            new_inc[i] = 0
+        new_inc[kc_of[st["site"]]] = tot
+        new_inc[fill_of[st["site"]]] = 1
+    new_cum, c = [], 0
+    for v in new_inc:
+        c += v
+        new_cum.append(c)
+
+    def producer(v):
+        for i, cv in enumerate(orig_cum):
+            if cv >= v:
+                return i
+        raise SystemExit(f"wait S[{U}] >= {v} exceeds the {orig_cum[-1] if orig_cum else 0} increments of the Pool program")
+
+    def closure(p, own=None):
+        """Latest Pool instruction (new program) that must complete for a wait on producer p.
+        -1: nothing (wait only on markers of the own site)."""
+        e = -1 if p in marker_of else p
+        for first, s in eff_first:
+            if first <= p and s != own:
+                e = max(e, kc_of[s])
+        if p in marker_of and marker_of[p] != own:
+            e = max(e, kc_of[marker_of[p]])
+        return e
+
+    renumbered = 0
+    for eng, prog in nf.engines.items():
+        if eng == "pool":
+            continue
+        for i, x in enumerate(prog):
+            m, idx, v = wait_of(x)
+            if idx == U and m and v > 0 and i < first_reset[eng]:
+                if m != WAIT_GE:
+                    raise SystemExit(f"{eng} {i}: unsupported wait mode {m} on S[{U}]")
+                nv = new_cum[closure(producer(v))]
+                if nv != v:
+                    renumbered += 1
+                struct.pack_into("<I", x, 8, nv)
+
+    new_prog = []
+    site_index = {st["site"]: n for n, st in enumerate(sites)}
+
+    def memset_zero(t, wait):
+        """GpSimd MEMSET of the scratch tile (1 partition x elems int32) to 0, keeping the marker's wait."""
+        ms = bytearray(SLOT)
+        ms[0], ms[1] = OP_MEMSET, SLOT // 4
+        if wait:
+            ms[4], ms[5] = wait[0], wait[1]
+            struct.pack_into("<I", ms, 8, wait[2])
+        struct.pack_into("<H", ms, 28, t["elems"])
+        ms[32], ms[34] = t["dtype_code"], t["nparts"]          # MEMSET: dtype at byte 32 (IOTA: byte 33)
+        struct.pack_into("<I", ms, 40, 0)
+        struct.pack_into("<I", ms, 44, t["part0"] * PART_STRIDE + t["offset"])
+        struct.pack_into("<4H", ms, 48, 1, 1, 1, 1)
+        struct.pack_into("<4H", ms, 56, t["elems"], 1, 1, 1)
+        ms[6], ms[7] = UPD_INC_COMPLETE, U
+        return ms
+
+    def event_sem(wm=0, wi=0, wv=0):
+        es = bytearray(SLOT)
+        es[0], es[1] = OP_EVENT_SEMAPHORE, SLOT // 4
+        es[4], es[5] = wm, wi
+        struct.pack_into("<I", es, 8, wv)
+        return es
+
+    new_index = []                                 # old Pool instruction -> its first slot in the new program
+    for i, x in enumerate(pool):
+        new_index.append(len(new_prog))
+        m, idx, v = wait_of(x)
+        own = marker_of.get(i)
+        wait = (m, idx, v) if m else None
+        if idx == U and m and v > 0 and i < first_reset["pool"]:
+            if m != WAIT_GE:
+                raise SystemExit(f"Pool instruction {i}: unsupported wait mode {m}")
+            e = closure(producer(v), own)
+            if e < 0:
+                wait = None
+            elif e >= i:
+                raise SystemExit(f"Pool instruction {i} (op 0x{x[0]:02x}) depends on GPSIMD call site(s) whose KERNEL_CALL "
+                                 f"would come later (at {e}); the compiler interleaved independent work with the call "
+                                 f"site. Make the instruction depend on the call's outputs or move it.")
+            else:
+                wait = (m, idx, new_cum[e])
+            if own is None:
+                struct.pack_into("<I", x, 8, new_cum[e] if e >= 0 else 0)
+                if e < 0:
+                    x[4] = x[5] = 0
+        if own is None:
+            new_prog.append(x)
+            continue
+        if i == fill_of[own]:
+            new_prog.append(memset_zero(sites[site_index[own]]["scratch"], wait))   # runtime needs a zeroed scratch
+            continue
+        if i != kc_of[own]:
+            new_prog.append(event_sem(*wait) if wait else event_sem())
+            continue
+        if wait:
+            new_prog.append(event_sem(*wait))
+        new_prog.append(event_sem(WAIT_GE, U, new_cum[fill_of[own]]))      # scratch zeroed on every core
+        kc = bytearray(SLOT)
+        kc[0], kc[1] = OP_KERNEL_CALL, SLOT // 4
+        tot = new_inc[i]
+        if tot == 1:
+            kc[6], kc[7] = UPD_INC_COMPLETE, U
+        elif tot > 1:
+            kc[6], kc[7] = UPD_ADD_COMPLETE, U
+            struct.pack_into("<I", kc, 8, tot)
+        kc[12] = site_index[own]                          # index into gpsimd_kernels_def
+        new_prog.append(kc)
+    for x in new_prog:                                    # relocate absolute jump targets
+        if x[0] == OP_JUMP_ABS:
+            t = u32(x, 16)
+            if t >= len(pool):
+                raise SystemExit(f"jump target {t} outside the Pool program")
+            struct.pack_into("<I", x, 16, new_index[t])
+    nf.engines["pool"] = new_prog
+
+    libname = os.path.basename(lib)
+    pj = json.loads(nf.get(nf.defj["pool"]))
+    pj["gpsimd_kernels_def"] = "gpsimd_kernels_def.json"
+    nf.put(nf.defj["pool"], json.dumps(pj).encode())
+    nf.put("gpsimd_kernels_def.json", json.dumps([{"name": st["entry"], "lib": f"/{nf.sg}/{libname}"} for st in sites]).encode())
+    nf.put(libname, open(lib, "rb").read())
+    nf.save(out)
+    print(f"injected {len(sites)} GPSIMD call(s) into {out}: Pool program {len(pool)} -> {len(new_prog)} slots, "
+          f"completion semaphore S[{U}], {renumbered} wait(s) renumbered in other engines, library {libname} "
+          f"({os.path.getsize(lib)} bytes)")
+
+
+def cmd_dump(neff_path, eng="pool"):
+    nf = Neff(neff_path)
+    if eng not in nf.engines:
+        raise SystemExit(f"no {eng} program (have {sorted(nf.engines)})")
+    for i, x in enumerate(nf.engines[eng]):
+        extra = ""
+        if x[0] == OP_TENSOR_SCALAR and x[37] == 4 and untag(f32(x, 44)):
+            s, r, a, c = untag(f32(x, 44))
+            extra = f"  <site {s} {ROLE_NAMES[r]} arg {a} chunk {c}>"
+        elif x[0] == OP_MEMSET and untag(f32(x, 40)):
+            extra = f"  <site {untag(f32(x, 40))[0]} start>"
+        print(f"{i:4d}: op 0x{x[0]:02x} wait({x[4]},S{x[5]},{u32(x, 8)}) upd({x[6]},S{x[7]}) | {bytes(x[12:48]).hex()}{extra}")
+
+
+def main():
+    a = sys.argv[1:]
+    if len(a) >= 2 and a[0] == "dump":
+        cmd_dump(*a[1:])
+    elif len(a) == 5 and a[0] == "analyze" and a[3] == "-o":
+        cmd_analyze(a[1], a[2], a[4])
+    elif len(a) == 6 and a[0] == "inject" and a[4] == "-o":
+        cmd_inject(a[1], a[2], a[3], a[5])
+    else:
+        raise SystemExit(__doc__)
+
+
+if __name__ == "__main__":
+    main()

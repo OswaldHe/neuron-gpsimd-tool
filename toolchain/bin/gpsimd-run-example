@@ -1,0 +1,17 @@
+#!/bin/bash
+# gpsimd-run-example <build_dir> [extra gpsimd-run args] - run final.neff with the example's data
+set -euo pipefail
+BIN=$(cd "$(dirname "$0")" && pwd)
+B=$(cd "${1:?usage: gpsimd-run-example <build_dir> [args]}" && pwd); shift
+ARGS=$(python3 -I - "$B/manifest.json" <<'PY'
+import json, sys, shlex
+m = json.load(open(sys.argv[1]))
+a = []
+for k, v in m["inputs"].items(): a += ["--in", f"{k}={v}"]
+for k, v in m["outputs"].items(): a += ["--expect", f"{k}={v}"]
+a += ["--sites", str(m["sites"]), "--iters", str(m["iters"])]
+for t in m.get("hbm", []): a += ["--hbm", t]
+print(" ".join(shlex.quote(x) for x in a))
+PY
+)
+eval exec "$BIN/gpsimd-run" "$B/final.neff" $ARGS '"$@"'

@@ -1,0 +1,27 @@
+#!/bin/bash
+# gpsimd-build <example_dir> [build_dir] - NKI kernel + GPSIMD operators -> runnable NEFF
+#
+#   1. compile the NKI kernel for trn3 (gp.call markers) and write inputs/references  (Neuron venv python)
+#   2. gpsimd-neff analyze: resolve every call site's tiles from the compiled NEFF
+#   3. gpsimd-cc: build the operator library for those call sites                    (xt-clang)
+#   4. gpsimd-neff inject: KERNEL_CALLs + synchronization -> <build_dir>/final.neff
+# Then: gpsimd-run-example <build_dir>   (or bin/gpsimd-run with explicit arguments)
+#
+# Environment: NEURON_VENV (default /opt/aws_neuronx_venv_torch_neuronx_2_14_0), GPSIMD_TOOLS, SEED (default 1)
+set -euo pipefail
+BIN=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(dirname "$BIN")
+EX=$(cd "${1:?usage: gpsimd-build <example_dir> [build_dir]}" && pwd)
+B=${2:-$EX/build}
+mkdir -p "$B"; B=$(cd "$B" && pwd)
+NEURON_VENV=${NEURON_VENV:-/opt/aws_neuronx_venv_torch_neuronx_2_14_0}
+SEED=${SEED:-1}
+rm -f "$B/final.neff" "$B/kernel.neff"
+PATH="$NEURON_VENV/bin:$PATH" "$NEURON_VENV/bin/python" "$ROOT/python/gpsimd_nki_build.py" "$EX" "$B" "$SEED" 2>&1 \
+    | grep -vE 'FutureWarning|warnings.warn|UserWarning' || true
+[ -s "$B/kernel.neff" ] && [ -s "$B/manifest.json" ] || { echo "gpsimd-build: NKI compilation failed" >&2; exit 1; }
+python3 -I "$BIN/gpsimd-neff" analyze "$B/kernel.neff" "$B/sites.json" -o "$B/sites_resolved.json"
+mapfile -t OPS < <(python3 -I -c 'import json,sys; [print(x) for x in json.load(open(sys.argv[1]))["ops"]]' "$B/manifest.json")
+mapfile -t CFLAGS < <(python3 -I -c 'import json,sys; [print(x) for x in json.load(open(sys.argv[1]))["cflags"]]' "$B/manifest.json")
+python3 -I "$BIN/gpsimd-cc" --sites "$B/sites_resolved.json" -o "$B/ops.so" "${OPS[@]}" "${CFLAGS[@]}"
+python3 -I "$BIN/gpsimd-neff" inject "$B/kernel.neff" "$B/sites_resolved.json" "$B/ops.so" -o "$B/final.neff"

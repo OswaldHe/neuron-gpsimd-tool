@@ -1,0 +1,15 @@
+#!/bin/bash
+# gpsimd-run: builds runner/gpsimd_run.cpp on first use, then runs it (see the .cpp for options).
+set -euo pipefail
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+EXE=$ROOT/runner/build/gpsimd_run
+SRC=$ROOT/runner/gpsimd_run.cpp
+if [ ! -x "$EXE" ] || [ "$SRC" -nt "$EXE" ]; then
+    mkdir -p "$ROOT/runner/build"
+    g++ -std=c++17 -O2 -Wall -Wextra -o "$EXE" "$SRC" -I/opt/aws/neuron/include -L/opt/aws/neuron/lib -lnrt \
+        -Wl,-rpath,/opt/aws/neuron/lib
+fi
+export NEURON_RT_VISIBLE_CORES=${NEURON_RT_VISIBLE_CORES:-0}
+export NEURON_RT_LOG_LEVEL=${NEURON_RT_LOG_LEVEL:-ERROR}
+export NEURON_RT_EXEC_TIMEOUT=${NEURON_RT_EXEC_TIMEOUT:-30}
+exec "$EXE" "$@"
