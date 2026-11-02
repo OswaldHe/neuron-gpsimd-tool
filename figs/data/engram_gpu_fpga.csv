@@ -1,0 +1,13 @@
+# Engram module of layer 1 on AMD MI210 GPU + AMD Alveo U55C FPGA (HeteroLLM kernels/deepseek_engram),
+# Engram reference configuration (engram_demo_v1.py: hidden 1024 x 4 streams, 2/3-grams x 8 heads, 64 values a row),
+# not DeepSeek-V4.1-Flash. Times in ms.
+# engram_gpu: reference PyTorch Engram on the GPU (hash on the host with numpy); gpu_hash: the hash inside engram_gpu;
+# fpga: hash + embedding load + key/value projections, FPGA kernel time, 1 board;
+# gpu_part: gate + short convolution + residual HIP kernels; sum_1board = fpga + gpu_part (no transfer, no overlap);
+# 2/4 boards: estimates, fpga / boards + gpu_part.
+tokens,engram_gpu,gpu_hash,fpga,gpu_part,sum_1board,boards2,boards4
+8,3.857,0.983,0.392,0.545,0.937,0.741,0.643
+32,5.68,1.097,0.594,0.663,1.257,0.96,0.8115
+1024,6.455,1.261,9.508,0.856,10.364,5.61,3.233
+8192,9.681,1.872,73.3,1.61,74.91,38.26,19.935
+32768,34.42,5.612,295.2,2.98,298.18,150.58,76.78

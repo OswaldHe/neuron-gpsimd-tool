@@ -1,7 +1,12 @@
 """Figures of BLOG.md.  python figs/src/make_figs.py  (writes figs/*.png)
 
-Numbers come from nkiopt/README.md (median total_exec_time of 5 profiled executions) and the timeline CSVs
+Figure 2 (fig02_pipeline.png) is figures/memory_manage_flow.pdf of arXiv:2603.29002, rendered at 300 dpi.
+Figure 5 (fig05_trainium_arch.png) is the AWS Neuron documentation diagram, copied from neuron-neff-doc/figs.
+
+Figures 3-4 use figs/data/engram_gpu_fpga.csv (GPU-FPGA Engram experiment of HeteroLLM, Engram reference configuration).
+The other numbers come from nkiopt/README.md (median total_exec_time of 5 profiled executions) and the timeline CSVs
 in figs/data/ (extract_profile.py on neuron-explorer JSON exports of one profiled execution).
+Diagrams use few words, symbols and large fonts; details live in the blog text.
 """
 import csv
 import os
@@ -10,7 +15,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyBboxPatch, Rectangle
+from matplotlib.patches import Circle, FancyBboxPatch, Patch, Polygon, Rectangle
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIGS = os.path.dirname(HERE)
@@ -19,11 +24,13 @@ DATA = os.path.join(FIGS, "data")
 SURF, INK, INK2, MUTED, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#8a8984", "#e4e3df"
 NKI, GP, DMA, OTHER = "#2a78d6", "#eb6834", "#1baf7a", "#8a8984"
 NKI_L, GP_L, DMA_L, OTHER_L = "#e3eefc", "#fde5da", "#d9f2e8", "#f0efec"
+GOOD, BAD = "#1baf7a", "#e34948"
 
 plt.rcParams.update({
-    "font.family": "DejaVu Sans", "font.size": 11, "text.color": INK, "axes.labelcolor": INK2,
+    "font.family": "DejaVu Sans", "font.size": 13, "text.color": INK, "axes.labelcolor": INK2,
     "axes.edgecolor": GRID, "xtick.color": INK2, "ytick.color": INK2, "axes.facecolor": SURF,
     "figure.facecolor": SURF, "savefig.facecolor": SURF, "axes.spines.top": False, "axes.spines.right": False,
+    "axes.labelsize": 13, "xtick.labelsize": 12.5, "ytick.labelsize": 12.5, "legend.fontsize": 12.5,
 })
 
 
@@ -33,20 +40,34 @@ def save(fig, name):
     print("wrote", name)
 
 
-def box(ax, x, y, w, h, text, fc, ec, tc=INK, fs=10, bold=False, r=0.12, lw=1.2, ha="center"):
+def box(ax, x, y, w, h, text, fc, ec, tc=INK, fs=14, bold=False, r=0.12, lw=1.6):
     ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle=f"round,pad=0,rounding_size={r}", fc=fc, ec=ec, lw=lw))
-    tx = x + w / 2 if ha == "center" else x + 0.15
-    ax.text(tx, y + h / 2, text, ha=ha, va="center", fontsize=fs, color=tc,
-            weight="bold" if bold else "normal", linespacing=1.35)
+    if text:
+        ax.text(x + w / 2, y + h / 2, text, ha="center", va="center", fontsize=fs, color=tc,
+                weight="bold" if bold else "normal", linespacing=1.3)
 
 
-def arrow(ax, x0, y0, x1, y1, color=INK2, lw=1.3, style="-|>"):
+def doc(ax, x, y, w, h, text, fc, ec, fs=14, c=0.22):
+    """A file: a rectangle with a folded corner."""
+    ax.add_patch(Polygon([(x, y), (x + w, y), (x + w, y + h - c), (x + w - c, y + h), (x, y + h)],
+                         closed=True, fc=fc, ec=ec, lw=1.6))
+    ax.plot([x + w - c, x + w - c, x + w], [y + h, y + h - c, y + h - c], color=ec, lw=1.2)
+    ax.text(x + w / 2, y + h / 2, text, ha="center", va="center", fontsize=fs, color=INK, linespacing=1.3)
+
+
+def badge(ax, x, y, n, r=0.19):
+    ax.add_patch(Circle((x, y), r, fc=INK, ec=SURF, lw=1.5, zorder=5))
+    ax.text(x, y, str(n), ha="center", va="center", fontsize=12.5, color=SURF, weight="bold", zorder=6)
+
+
+def arrow(ax, x0, y0, x1, y1, color=INK2, lw=1.8, style="-|>", ls="-"):
     ax.annotate("", xy=(x1, y1), xytext=(x0, y0),
-                arrowprops=dict(arrowstyle=style, color=color, lw=lw, shrinkA=0, shrinkB=0))
+                arrowprops=dict(arrowstyle=style, color=color, lw=lw, ls=ls, shrinkA=0, shrinkB=0,
+                                mutation_scale=16))
 
 
-def canvas(w, h, scale=1.0):
-    fig = plt.figure(figsize=(w * scale, h * scale))
+def canvas(w, h):
+    fig = plt.figure(figsize=(w, h))
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_xlim(0, w)
     ax.set_ylim(0, h)
@@ -54,152 +75,189 @@ def canvas(w, h, scale=1.0):
     return fig, ax
 
 
+def legend_row(ax, x, y, items, fs=12.5, gap=0.35):
+    """Inline legend for diagrams: [(face, edge, label), ...] left to right."""
+    for fc, ec, lab in items:
+        ax.add_patch(FancyBboxPatch((x, y - 0.11), 0.32, 0.22, boxstyle="round,pad=0,rounding_size=0.05",
+                                    fc=fc, ec=ec, lw=1.4))
+        ax.text(x + 0.45, y, lab, va="center", fontsize=fs, color=INK)
+        x += 0.45 + 0.105 * fs / 12.5 * len(lab) + gap
+
+
 # ----------------------------------------------------------------------------------------------- figure 1
 def fig_speedups():
-    rows = [  # label, stage speedup (GPSIMD-assisted stage alone) or None, whole-computation speedup
-        ("Hashing · decode, 10 sequences (T=60)", None, 86.95 / 48.45),
-        ("Hashing · prefill chunk (T=1024)", None, 531.1 / 449.7),
-        ("Hashing · prefill chunk (T=2048)", None, 1055.6 / 890.6),
-        ("Read-out · decode, 10 sequences (T=60)", 62.1 / 24.7, 697.1 / 681.0),
-        ("Read-out · prefill chunk (T=1024)", 506.9 / 102.4, 3362.9 / 2968.9),
-        ("Read-out · prefill chunk (T=2048)", 980.5 / 200.7, 6766.4 / 5926.4),
+    # GPSIMD + NKI over the hand-optimized NKI port, one NeuronCore (median total_exec_time, us).
+    # Whole Engram per step = n-gram hashing (ids of both Engram layers) + read-out of 2 layers
+    # (table retrieval + fp8 GEMM + gate), summed from the separate measurements.
+    hash_nki, hash_gp = [86.95, 531.1, 1055.6], [48.45, 449.7, 890.6]
+    ret_nki, ret_gp = [62.1, 506.9, 980.5], [24.7, 102.4, 200.7]
+    ro_nki, ro_gp = [697.1, 3362.9, 6766.4], [681.0, 2968.9, 5926.4]
+    whole = [(h + 2 * r) / (hg + 2 * rg) for h, r, hg, rg in zip(hash_nki, ro_nki, hash_gp, ro_gp)]
+    groups = ["Decode", "Prefill, 1024 tokens", "Prefill, 2048 tokens"]
+    series = [  # term of the high-level summary, color, speedup per group
+        ("n-gram hashing", NKI, [n / g for n, g in zip(hash_nki, hash_gp)]),
+        ("table retrieval", GP, [n / g for n, g in zip(ret_nki, ret_gp)]),
+        ("whole Engram (n-gram hashing + table retrieval + attention + gate)", DMA, whole),
     ]
-    fig, ax = plt.subplots(figsize=(9.2, 4.6))
-    h = 0.36
-    for i, (lab, st, wh) in enumerate(rows):
-        y = len(rows) - 1 - i
-        if st is None:
-            ax.barh(y, wh, height=h, color=NKI, edgecolor=SURF, linewidth=2)
-            ax.text(wh + 0.06, y, f"{wh:.2f}x", va="center", fontsize=10, color=INK)
-        else:
-            ax.barh(y + h / 2, st, height=h, color=GP, edgecolor=SURF, linewidth=2)
-            ax.barh(y - h / 2, wh, height=h, color=NKI, edgecolor=SURF, linewidth=2)
-            ax.text(st + 0.06, y + h / 2, f"{st:.2f}x", va="center", fontsize=10, color=INK)
-            ax.text(wh + 0.06, y - h / 2, f"{wh:.2f}x", va="center", fontsize=10, color=INK)
-    ax.set_yticks(range(len(rows)))
-    ax.set_yticklabels([r[0] for r in rows][::-1], fontsize=10.5, color=INK)
-    ax.axvline(1.0, color=MUTED, lw=1, ls=(0, (4, 3)))
-    ax.text(1.03, len(rows) - 0.45, "hand-optimized NKI = 1.0x", fontsize=9, color=INK2, va="bottom")
+    fig, ax = plt.subplots(figsize=(8.4, 4.8))
+    h = 0.27
+    for k, (name, color, vals) in enumerate(series):
+        for g, v in enumerate(vals):
+            y = (len(groups) - 1 - g) + (1 - k) * h
+            ax.barh(y, v, height=h, color=color, edgecolor=SURF, linewidth=1.5, label=name if g == 0 else None)
+            ax.text(v + 0.07, y, f"{v:.2f}x", ha="left", va="center", fontsize=13.5, weight="bold", color=INK)
+    ax.axvline(1.0, color=INK2, lw=1.2, ls=(0, (4, 3)), zorder=3)
+    ax.set_yticks(range(len(groups)))
+    ax.set_yticklabels(groups[::-1], fontsize=13.5, color=INK)
+    ax.set_ylim(-0.55, len(groups) - 0.5)
     ax.set_xlim(0, 5.6)
-    ax.set_xlabel("speedup over the hand-optimized NKI port (median total_exec_time)")
+    ax.set_xticks(range(0, 6))
+    ax.set_xticklabels([f"{t}x" for t in range(0, 6)])
+    ax.set_xlabel("Speedup over baseline without GPSIMD custom op")
     ax.xaxis.grid(True, color=GRID, lw=0.8)
     ax.set_axisbelow(True)
     ax.tick_params(axis="y", length=0)
-    from matplotlib.patches import Patch
-    ax.legend(handles=[Patch(color=NKI, label="whole Engram computation"),
-                       Patch(color=GP, label="retrieval (gather) stage alone")],
-              loc="upper right", frameon=False, fontsize=10)
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles, labels, loc="lower left", bbox_to_anchor=(0.0, 1.01), ncol=1, frameon=False, fontsize=12.5,
+              handlelength=1.2, borderaxespad=0, labelspacing=0.35)
     save(fig, "fig01_speedups.png")
 
 
-# ----------------------------------------------------------------------------------------------- figure 2
-def fig_neuroncore():
-    fig, ax = canvas(13.2, 6.2)
-    # NeuronCore
-    box(ax, 0.2, 0.2, 6.0, 5.8, "", "#ffffff", GRID, r=0.2)
-    ax.text(0.45, 5.62, "One Trainium 3 NeuronCore", fontsize=12.5, weight="bold", va="center")
-    engines = [("Tensor Engine\n128 x 128\nsystolic array", NKI_L, NKI), ("Vector Engine", NKI_L, NKI),
-               ("Scalar Engine", NKI_L, NKI), ("Sync Engine", NKI_L, NKI)]
-    for k, (t, fc, ec) in enumerate(engines):
-        box(ax, 0.45 + k * 1.42, 4.15, 1.3, 1.0, t, fc, ec, fs=9.2)
-    box(ax, 0.45, 2.95, 5.55, 0.95, "GPSIMD Engine (\"Pool\"): 8 general-purpose cores", GP_L, GP, fs=10.5, bold=True)
-    box(ax, 0.45, 1.6, 3.9, 1.05, "SBUF: on-chip SRAM, 128 partitions\n(operands of every engine)", OTHER_L, OTHER, fs=9.5)
-    box(ax, 4.5, 1.6, 1.5, 1.05, "PSUM\n(matmul\naccumulators)", OTHER_L, OTHER, fs=9)
-    box(ax, 0.45, 0.45, 5.55, 0.85, "DMA engines and queues  <->  HBM", DMA_L, DMA, fs=10)
-    # zoom lines
-    ax.plot([6.0, 6.75], [3.9, 5.75], color=GP, lw=1, ls=(0, (3, 3)))
-    ax.plot([6.0, 6.75], [2.95, 0.35], color=GP, lw=1, ls=(0, (3, 3)))
-    # GPSIMD detail
-    box(ax, 6.75, 0.2, 6.25, 5.8, "", "#fffaf7", GP, r=0.2)
-    ax.text(7.0, 5.62, "Inside the GPSIMD Engine", fontsize=12.5, weight="bold", va="center")
-    for c in range(8):
-        cx = 7.0 + (c % 4) * 1.48
-        cy = 4.25 if c < 4 else 3.05
-        box(ax, cx, cy, 1.36, 1.0, f"core {c}\nXtensa, 32-bit\n1.2 GHz", "#ffffff", GP, fs=8.6)
-    lines = [
-        "each core:  256 KB local data RAM,  one iDMA channel;  custom code up to 64 KB",
-        "integer ISA with 32 x 32 -> 64-bit multiply (MULL / MULUH);  no usable FPU or vector unit",
-        "SBUF window at core address 0xD0000000 (partition p at + p x 0x40000)",
-        "HBM window at 0xE0000000 (512 MB, set up by the host runner)",
-        "NKI uses the cores only through built-in instructions",
-        "(tensor ops on engine=gpsimd, iota, indirect-DMA descriptor generation)",
-    ]
-    for k, t in enumerate(lines):
-        ax.text(7.0, 2.6 - k * 0.38, t, fontsize=9.3, color=INK if k < 4 else INK2, va="center")
-    save(fig, "fig02_neuroncore.png")
+# ----------------------------------------------------------------------------------------------- figure 3
+def fig_fpga_split():
+    """GPU-FPGA split of the Engram module (Engram reference configuration, HeteroLLM kernels/deepseek_engram)."""
+    fig, ax = canvas(12.6, 3.9)
+    yb, hb = 1.05, 1.35
+    ym = yb + hb / 2
+    # devices
+    box(ax, 1.2, 0.5, 5.85, 3.0, "", "#fff8f4", GP, r=0.2, lw=1.8)
+    ax.text(1.42, 3.12, "FPGA", fontsize=16, weight="bold", va="center")
+    box(ax, 8.05, 0.5, 3.55, 3.0, "", "#f5f9fe", NKI, r=0.2, lw=1.8)
+    ax.text(8.27, 3.12, "GPU", fontsize=16, weight="bold", va="center")
+    fpga = [(1.45, "hash\n× ⊕ mod"), (3.35, "table\nlookup ▦"), (5.25, "K/V proj.\nW · e")]
+    gpu = [(8.25, "gate\nσ(h·k)·v"), (9.95, "conv\n+ residual")]
+    for x, t in fpga:
+        box(ax, x, yb, 1.55, hb, t, "#ffffff", GP, fs=14.5)
+    for x, t in gpu:
+        box(ax, x, yb, 1.45, hb, t, "#ffffff", NKI, fs=14.5)
+    arrow(ax, 3.0, ym, 3.35, ym)
+    arrow(ax, 4.9, ym, 5.25, ym)
+    arrow(ax, 9.7, ym, 9.95, ym)
+    # PCIe hand-off
+    arrow(ax, 6.8, ym, 8.25, ym, color=INK, lw=3)
+    ax.text(7.52, ym + 0.2, "PCIe", ha="center", va="bottom", fontsize=14.5, weight="bold")
+    # inputs and output
+    ax.text(0.1, ym, "tokens", ha="left", va="center", fontsize=14)
+    arrow(ax, 0.95, ym, 1.45, ym)
+    arrow(ax, 8.975, 0.08, 8.975, yb)
+    ax.text(8.8, 0.25, "h", ha="right", va="center", fontsize=15, style="italic")
+    arrow(ax, 11.4, ym, 11.85, ym)
+    ax.text(11.92, ym, "attn", ha="left", va="center", fontsize=14)
+    save(fig, "fig03_fpga_split.png")
 
 
 # ----------------------------------------------------------------------------------------------- figure 3
+def load_fpga():
+    with open(os.path.join(DATA, "engram_gpu_fpga.csv")) as f:
+        rows = list(csv.DictReader(l for l in f if not l.startswith("#")))
+    return [{k: float(v) for k, v in r.items()} for r in rows]
+
+
+def fig_fpga_results():
+    rows = load_fpga()
+    fig, ax = plt.subplots(figsize=(8.6, 4.6))
+    w = 0.36
+    for i, r in enumerate(rows):
+        g, f2 = r["engram_gpu"], r["boards2"]
+        ax.bar(i - w / 2, g, width=w, color=NKI, edgecolor=SURF, linewidth=2)
+        ax.bar(i + w / 2, f2, width=w, color=GP, edgecolor=SURF, linewidth=2)
+        sp = g / f2
+        lab = (f"{sp:.2f}x\nfaster" if sp < 1.5 else f"{sp:.1f}x\nfaster") if sp >= 1 else f"{1 / sp:.1f}x\nslower"
+        ax.text(i, max(g, f2) * 1.3, lab, ha="center", va="bottom", fontsize=13.5, color=INK,
+                weight="bold" if sp >= 1 else "normal")
+    ax.set_yscale("log")
+    ax.set_ylim(0.3, 900)
+    ticks = [0.5, 1, 2, 5, 10, 20, 50, 100, 200]
+    ax.set_yticks(ticks)
+    ax.set_yticklabels([f"{t:g}" for t in ticks])
+    ax.minorticks_off()
+    ax.set_xticks(range(len(rows)))
+    ax.set_xticklabels([f"{int(r['tokens']):,}" for r in rows], color=INK, fontsize=13.5)
+    ax.set_xlabel("Tokens")
+    ax.set_ylabel("Engram time (ms, log scale)")
+    ax.yaxis.grid(True, color=GRID, lw=0.8)
+    ax.set_axisbelow(True)
+    ax.tick_params(axis="x", length=0)
+    ax.legend(handles=[Patch(color=NKI, label="GPU only"), Patch(color=GP, label="GPU + 2 FPGAs (est.)")],
+              loc="upper left", frameon=False, ncol=2, fontsize=13)
+    save(fig, "fig04_fpga_results.png")
+
+
+# ----------------------------------------------------------------------------------------------- figure 5
 def fig_toolchain():
-    fig, ax = canvas(14.9, 6.0)
-    W, H = 2.45, 1.05
-    y1, y2, y3 = 4.55, 2.55, 0.45
-    X = [0.2, 3.2, 6.2, 9.2, 12.2]
-    # row 1: the NKI kernel
-    box(ax, X[0], y1, W, H, "kernel.py\nNKI kernel + gp.call(...)", NKI_L, NKI, fs=9.5)
-    box(ax, X[1], y1, W, H, "neuronx-cc\n(NKI compiler)", "#ffffff", INK2, fs=9.5)
-    box(ax, X[2], y1, W, H, "kernel.neff\nPool0.bin holds the\ngp.call marker instructions", NKI_L, NKI, fs=9.0)
-    box(ax, X[3], y1, W, H, "gpsimd-neff analyze\nfind the markers, read\neach tile's SBUF location", "#ffffff", INK2, fs=9.0)
-    for k in range(3):
-        arrow(ax, X[k] + W, y1 + H / 2, X[k + 1], y1 + H / 2)
-    # row 2: the operator
-    box(ax, X[0], y2, W, H, "op.cpp\nGPSIMD_OP(name) { ... }", GP_L, GP, fs=9.5)
-    box(ax, X[1], y2, W, H, "gpsimd-cc\nxt-clang (base ISA) + runtime\n+ call-site table", "#ffffff", INK2, fs=8.9)
-    box(ax, X[2], y2, W, H, "sites_resolved.json\npartitions, byte offset,\ndtype, access pattern", OTHER_L, OTHER, fs=9.0)
-    arrow(ax, X[0] + W, y2 + H / 2, X[1], y2 + H / 2)
-    arrow(ax, X[2], y2 + H / 2, X[1] + W, y2 + H / 2)
-    arrow(ax, X[3] + W / 2, y1, X[2] + W * 0.8, y2 + H)
-    # row 3: injection and run
-    box(ax, X[1], y3, W, H, "ops.so\nXtensa ELF library", GP_L, GP, fs=9.5)
-    box(ax, X[2], y3, W, H, "gpsimd-neff inject\nkernel.neff: markers ->\none KERNEL_CALL a site", "#ffffff", INK2, fs=8.9)
-    box(ax, X[3], y3, W, H, "final.neff\nKERNEL_CALL (0x85) in Pool0.bin,\ngpsimd_kernels_def.json, ops.so", NKI_L, NKI, fs=8.4)
-    box(ax, X[4], y3, W, H, "gpsimd-run (libnrt)\nmaps SBUF / HBM windows,\nruns, checks, reads receipts", "#ffffff", INK2, fs=8.6)
-    arrow(ax, X[1] + W / 2, y2, X[1] + W / 2, y3 + H)
-    arrow(ax, X[2] + W / 2, y2, X[2] + W / 2, y3 + H)
-    arrow(ax, X[1] + W, y3 + H / 2, X[2], y3 + H / 2)
-    arrow(ax, X[2] + W, y3 + H / 2, X[3], y3 + H / 2)
-    arrow(ax, X[3] + W, y3 + H / 2, X[4], y3 + H / 2)
-    ax.text(X[0], y3 + H / 2, "gpsimd-build runs\nall steps; gp.compile\ndoes the same from\nPython", fontsize=9.3,
-            color=INK2, va="center")
-    save(fig, "fig03_toolchain.png")
-
-
-# ----------------------------------------------------------------------------------------------- figure 4
-def fig_engram_split():
-    fig, ax = canvas(14.4, 6.4)
-    cols = [("1. Prepare Memory", 0.2), ("2. Compute Relevancy", 3.75), ("3. Retrieval", 7.3), ("4. Apply to Inference", 10.85)]
-    cw = 3.35
-    for t, x in cols:
-        box(ax, x, 0.25, cw, 5.6, "", "#ffffff", GRID, r=0.15)
-        ax.text(x + cw / 2, 5.5, t, ha="center", va="center", fontsize=12, weight="bold")
-    # prepare
-    box(ax, 0.4, 3.75, 2.95, 1.35, "Engram table, trained offline\n384M rows x 256 bf16,\nsharded by row over 64 ranks\n(6.0M rows = 3.1 GB a rank)", OTHER_L, OTHER, fs=9)
-    box(ax, 0.4, 1.95, 2.95, 1.5, "n-gram windows\ncompressed id of each token\nand the 3 tokens before it\n(token map + token history)", NKI_L, NKI, fs=9)
-    ax.text(1.875, 1.7, "NKI: indirect DMA + Vector", ha="center", fontsize=8.8, color=NKI)
-    # relevancy
-    box(ax, 3.95, 1.95, 2.95, 3.15, "n-gram hash\nper 2-, 3-, 4-gram:\nid x 64-bit multiplier,\nXOR, mod a prime\n(8 primes per n),\n+ column offset\n\n-> 24 row ids per token\n    per Engram layer", GP_L, GP, fs=9.2)
-    ax.text(5.425, 1.7, "GPSIMD custom op", ha="center", fontsize=8.8, color=GP, weight="bold")
-    # retrieval
-    box(ax, 7.5, 3.95, 2.95, 1.15, "hit compaction\nkeep the ~1.5 % of ids\nthat this rank holds", GP_L, GP, fs=9.2)
-    ax.text(8.975, 3.72, "GPSIMD custom op", ha="center", fontsize=8.8, color=GP, weight="bold")
-    box(ax, 7.5, 2.3, 2.95, 1.15, "gather the hit rows from\nthis rank's table shard\ninto a zero-filled emb\n[T, 24 x 256]", NKI_L, NKI, fs=9.2)
-    ax.text(8.975, 2.07, "NKI: indirect DMA", ha="center", fontsize=8.8, color=NKI)
-    box(ax, 7.5, 0.6, 2.95, 1.05, "all-reduce of emb\nover the 64 ranks", OTHER_L, OTHER, fs=9.2)
-    # apply
-    box(ax, 11.05, 3.6, 2.95, 1.5, "fp8 MX GEMM\nemb [T, 6144] x wkv\n-> [T, 5 x 5120]:\n4 keys + 1 value", NKI_L, NKI, fs=9.2)
-    ax.text(12.525, 3.37, "NKI: Tensor Engine", ha="center", fontsize=8.8, color=NKI)
-    box(ax, 11.05, 1.55, 2.95, 1.5, "gate: per residual stream,\nnormalized dot product of\nhidden state and key,\nscales the value added", NKI_L, NKI, fs=9.2)
-    ax.text(12.525, 1.32, "NKI: Vector + Scalar", ha="center", fontsize=8.8, color=NKI)
-    arrow(ax, 3.35, 2.7, 3.95, 2.7)
-    arrow(ax, 6.9, 4.5, 7.5, 4.5)
-    arrow(ax, 10.1, 3.95, 10.1, 3.45)
-    arrow(ax, 10.1, 2.3, 10.1, 1.65)
-    arrow(ax, 10.45, 1.1, 11.05, 4.0)
-    arrow(ax, 13.65, 3.6, 13.65, 3.05)
-    save(fig, "fig04_engram_split.png")
+    fig, ax = canvas(13.4, 4.4)
+    w, h = 1.9, 0.95
+    yt, ym, yb = 3.1, 1.72, 0.35
+    tool = dict(fc="#ffffff", ec=INK2, r=0.3)
+    # NKI lane
+    doc(ax, 0.45, yt, w, h, "kernel.py\ngp.call(…)", NKI_L, NKI)
+    box(ax, 2.85, yt, w, h, "⚙ neuronx-cc", fs=14, **tool)
+    doc(ax, 5.25, yt, w, h, "kernel.neff", NKI_L, NKI)
+    arrow(ax, 2.35, yt + h / 2, 2.85, yt + h / 2)
+    arrow(ax, 4.75, yt + h / 2, 5.25, yt + h / 2)
+    # operator lane
+    doc(ax, 0.45, yb, w, h, "op.cpp", GP_L, GP)
+    box(ax, 2.85, yb, w, h, "⚙ gpsimd-cc", fs=14, **tool)
+    doc(ax, 5.25, yb, w, h, "ops.so", GP_L, GP)
+    arrow(ax, 2.35, yb + h / 2, 2.85, yb + h / 2)
+    arrow(ax, 4.75, yb + h / 2, 5.25, yb + h / 2)
+    # tile addresses from the compiled NEFF into the operator build
+    arrow(ax, 5.55, yt, 4.45, yb + h)
+    ax.text(5.15, 2.2, "tile\naddresses", fontsize=12.5, color=INK2, va="center", ha="left")
+    # inject, final NEFF, run
+    box(ax, 7.65, ym, 1.7, h, "⚙ inject", fs=14, **tool)
+    arrow(ax, 7.15, yt + 0.3, 8.6, ym + h)
+    arrow(ax, 7.15, yb + h - 0.3, 8.6, ym)
+    doc(ax, 9.75, ym, 2.0, h, "final.neff\n+ KERNEL_CALL", NKI_L, NKI, fs=13.5)
+    arrow(ax, 9.35, ym + h / 2, 9.75, ym + h / 2)
+    box(ax, 12.15, ym, 1.15, h, "⚡ run", fs=14, **tool)
+    arrow(ax, 11.75, ym + h / 2, 12.15, ym + h / 2)
+    # step numbers (Section 3.1)
+    for n, (x, y) in enumerate([(0.45, yb + h), (0.45, yt + h), (2.85, yb + h), (7.65, ym + h), (12.15, ym + h)], 1):
+        badge(ax, x, y, n)
+    save(fig, "fig06_toolchain.png")
 
 
 # ----------------------------------------------------------------------------------------------- figure 6
+def fig_engram_split():
+    fig, ax = canvas(12.2, 5.3)
+    heads = ["Prepare Memory", "Compute Relevancy", "Retrieval", "Apply to Inference"]
+    cw, x0s = 2.85, [0.1, 3.1, 6.1, 9.1]
+    for t, x in zip(heads, x0s):
+        box(ax, x, 0.75, cw, 4.45, "", "#ffffff", GRID, r=0.15)
+        ax.text(x + cw / 2, 4.88, t, ha="center", va="center", fontsize=14.5, weight="bold")
+    bw = 2.35
+    bx = [x + (cw - bw) / 2 for x in x0s]
+    box(ax, bx[0], 3.35, bw, 1.0, "table ▦\n384M rows", OTHER_L, OTHER)
+    box(ax, bx[0], 1.9, bw, 1.0, "n-gram\nwindows", NKI_L, NKI)
+    box(ax, bx[1], 1.9, bw, 2.45, "n-gram hash\n\n× ⊕ mod p", GP_L, GP, fs=14.5)
+    box(ax, bx[2], 3.35, bw, 1.0, "hit compaction\n1.5% kept", GP_L, GP)
+    box(ax, bx[2], 2.15, bw, 0.8, "gather hits", NKI_L, NKI)
+    box(ax, bx[2], 1.0, bw, 0.75, "all-reduce", OTHER_L, OTHER)
+    box(ax, bx[3], 3.35, bw, 1.0, "fp8 GEMM\n→ keys, value", NKI_L, NKI)
+    box(ax, bx[3], 1.9, bw, 1.0, "gate", NKI_L, NKI)
+    arrow(ax, bx[0] + bw, 2.4, bx[1], 2.4)
+    arrow(ax, bx[1] + bw, 3.85, bx[2], 3.85)
+    arrow(ax, bx[2] + bw / 2, 3.35, bx[2] + bw / 2, 2.95)
+    arrow(ax, bx[2] + bw / 2, 2.15, bx[2] + bw / 2, 1.75)
+    arrow(ax, bx[2] + bw, 1.375, bx[3], 3.6)
+    arrow(ax, bx[3] + bw / 2, 3.35, bx[3] + bw / 2, 2.9)
+    legend_row(ax, 0.2, 0.3, [(GP_L, GP, "GPSIMD custom op"), (NKI_L, NKI, "NKI"),
+                              (OTHER_L, OTHER, "offline / collective")], fs=13)
+    save(fig, "fig07_engram_split.png")
+
+
+# ----------------------------------------------------------------------------------------------- figure 7
 def fig_gather():
     import numpy as np
     rng = np.random.default_rng(3)
@@ -207,41 +265,32 @@ def fig_gather():
     hits = np.zeros((nrow, ncol), bool)
     for r in range(nrow):        # rank 21 holds rows of hash columns 7 and 8 only (~0.375 hits a token)
         for c in (7, 8):
-            if rng.random() < (0.19 if c == 7 else 0.185) * 1.0:
+            if rng.random() < (0.19 if c == 7 else 0.185):
                 hits[r, c] = True
-    fig = plt.figure(figsize=(13.6, 5.6))
-    for side in range(2):
-        ax = fig.add_axes([0.02 + side * 0.5, 0.05, 0.46, 0.83])
-        ax.set_xlim(-0.5, 30)
-        ax.set_ylim(-4.6, nrow + 2.2)
+    fig = plt.figure(figsize=(11.6, 5.0))
+    panels = [("NKI only", "24,576 rows fetched  ·  192 DMAs", "#bcd6f6", NKI,
+               [("#bcd6f6", "fetched, masked ×0"), (NKI, "hit")]),
+              ("GPSIMD + NKI", "372 rows fetched  ·  3 gathers", "#f1f0ec", GP,
+               [("#f1f0ec", "skipped"), (GP, "hit")])]
+    for side, (title, stat, miss, hit, leg) in enumerate(panels):
+        ax = fig.add_axes([0.01 + side * 0.5, 0.02, 0.47, 0.9])
+        ax.set_xlim(-1.2, ncol + 0.2)
+        ax.set_ylim(-5.0, nrow + 2.4)
         ax.axis("off")
-        title = ("NKI only: fetch every lookup, mask the misses" if side == 0
-                 else "GPSIMD + NKI: list the hits, fetch only those")
-        ax.text(-0.3, nrow + 1.6, title, fontsize=12.5, weight="bold", va="center")
+        ax.text(-1.0, nrow + 1.5, title, fontsize=17, weight="bold", va="center")
         for r in range(nrow):
             for c in range(ncol):
-                y = nrow - 1 - r
-                if side == 0:
-                    fc = NKI if hits[r, c] else "#bcd6f6"
-                else:
-                    fc = GP if hits[r, c] else "#f4f3f0"
-                ax.add_patch(Rectangle((c + 0.06, y + 0.06), 0.88, 0.88, fc=fc, ec="none"))
-        ax.text(12, -0.75, "24 hash columns (3 n-gram sizes x 8 hashes) of one Engram layer", ha="center",
-                fontsize=9.5, color=INK2)
-        ax.text(-0.35, nrow / 2, "tokens", rotation=90, ha="right", va="center", fontsize=9.5, color=INK2)
-        if side == 0:
-            ax.text(24.6, nrow - 1.2, "light blue:\nfetched, then\nmasked to 0\n\ndark blue:\nfetched, kept", fontsize=9.2,
-                    color=INK2, va="top")
-            ax.text(-0.3, -2.0, "T=1024: 192 indirect DMAs x 128 rows = 24,576 row fetches,", fontsize=10.3)
-            ax.text(-0.3, -3.0, "of which 372 (1.5 %) are rows this rank holds", fontsize=10.3)
-            ax.text(-0.3, -4.0, "every fetched index costs ~5.5 ns of descriptor generation", fontsize=10.3, color=INK2)
-        else:
-            ax.text(24.6, nrow - 1.2, "orange:\nhits found by\nthe GPSIMD scan\n\nonly 2 of 24\ncolumns overlap\nthis rank's\n6.0M rows", fontsize=9.2,
-                    color=INK2, va="top")
-            ax.text(-0.3, -2.0, "GPSIMD writes 372 (table row, emb row) pairs + a count;", fontsize=10.3)
-            ax.text(-0.3, -3.0, "NKI gathers them with 3 indirect DMAs of 128 rows", fontsize=10.3)
-            ax.text(-0.3, -4.0, "into a zero-filled emb (all other rows stay 0)", fontsize=10.3, color=INK2)
-    save(fig, "fig06_gather.png")
+                ax.add_patch(Rectangle((c + 0.07, nrow - 1 - r + 0.07), 0.86, 0.86,
+                                       fc=hit if hits[r, c] else miss, ec="none"))
+        ax.text(ncol / 2, -0.75, "24 hash columns  →", ha="center", va="center", fontsize=13, color=INK2)
+        ax.text(-0.5, nrow / 2, "tokens  →", rotation=270, ha="center", va="center", fontsize=13, color=INK2)
+        ax.text(-1.0, -2.35, stat, fontsize=15.5, weight="bold", va="center")
+        x = -1.0
+        for fc, lab in leg:
+            ax.add_patch(Rectangle((x, -4.05), 0.8, 0.8, fc=fc, ec="none"))
+            ax.text(x + 1.2, -3.65, lab, fontsize=13, va="center")
+            x += 1.2 + 0.5 * len(lab) + 1.0
+    save(fig, "fig08_gather.png")
 
 
 # ----------------------------------------------------------------------------------------------- timelines
@@ -262,7 +311,7 @@ def load_tl(name):
 
 
 def draw_tl(ax, rows, title, xmax):
-    lanes = LANES + [("DMA transfers", None, None)]
+    lanes = LANES + [("DMA", None, None)]
     n = len(lanes)
     for k, (lab, eng, custom) in enumerate(lanes):
         y = n - 1 - k
@@ -275,17 +324,17 @@ def draw_tl(ax, rows, title, xmax):
                      and ((r["opcode"] == "CUSTOM_OP") == custom)]
             col = GP if custom else NKI
         if spans:
-            ax.broken_barh(spans, (y - 0.34, 0.68), facecolors=col, edgecolor="none")
-        busy = sum(d for _, d in spans)
+            ax.broken_barh(spans, (y - 0.36, 0.72), facecolors=col, edgecolor="none")
     ax.set_yticks(range(n))
-    ax.set_yticklabels([l[0] for l in lanes][::-1], fontsize=9.5, color=INK)
+    ax.set_yticklabels([l[0] for l in lanes][::-1], fontsize=13, color=INK)
     ax.tick_params(axis="y", length=0)
     ax.set_xlim(0, xmax)
     ax.set_ylim(-0.7, n - 0.3)
     end = max(r["start_us"] + r["dur_us"] for r in rows)
-    ax.axvline(end, color=INK2, lw=1, ls=(0, (3, 2)))
-    ax.text(end, n - 0.35, f" ends at {end:.0f} us", fontsize=9, color=INK2, va="bottom", ha="left")
-    ax.set_title(title, loc="left", fontsize=11.5, weight="bold", color=INK, pad=14)
+    ax.axvline(end, color=INK, lw=1.4, ls=(0, (3, 2)))
+    ax.text(end + xmax * 0.008, n - 1, f"{end:.0f} µs", fontsize=14, weight="bold", va="center", ha="left",
+            bbox=dict(boxstyle="round,pad=0.15", fc=SURF, ec="none"))
+    ax.set_title(title, loc="left", fontsize=15, weight="bold", color=INK, pad=12)
     ax.xaxis.grid(True, color=GRID, lw=0.7)
     ax.set_axisbelow(True)
 
@@ -294,57 +343,50 @@ def fig_timeline(prefix, out, titles, xmax=None):
     b = load_tl(f"{prefix}_baseline.csv")
     g = load_tl(f"{prefix}_gpsimd.csv")
     if xmax is None:
-        xmax = 1.08 * max(r["start_us"] + r["dur_us"] for r in b + g)
-    fig, axs = plt.subplots(2, 1, figsize=(11.5, 6.6), sharex=True)
+        xmax = 1.1 * max(r["start_us"] + r["dur_us"] for r in b + g)
+    fig, axs = plt.subplots(2, 1, figsize=(10, 6.4), sharex=True)
     draw_tl(axs[0], b, titles[0], xmax)
     draw_tl(axs[1], g, titles[1], xmax)
-    axs[1].set_xlabel("time since the first instruction of the profiled execution (us)")
-    fig.tight_layout(h_pad=1.5)
+    axs[1].set_xlabel("Time (µs)")
+    fig.tight_layout(h_pad=1.2)
     save(fig, out)
 
 
-# ----------------------------------------------------------------------------------------------- figure 9
+# ----------------------------------------------------------------------------------------------- figure 11
 def fig_amdahl():
     data = [  # label, retrieval stage measured alone, total
         ("NKI, T=1024", 506.9, 3362.9), ("GPSIMD + NKI, T=1024", 102.4, 2968.9),
         ("NKI, T=2048", 980.5, 6766.4), ("GPSIMD + NKI, T=2048", 200.7, 5926.4),
     ]
-    fig, ax = plt.subplots(figsize=(10.5, 3.6))
+    fig, ax = plt.subplots(figsize=(9.6, 4.0))
     ys = [3.3, 2.5, 1.0, 0.2]
     for (lab, g, t), y in zip(data, ys):
-        ax.barh(y, g, height=0.6, color=GP, edgecolor=SURF, linewidth=2)
-        ax.barh(y, t - g, left=g, height=0.6, color=NKI, edgecolor=SURF, linewidth=2)
-        ax.text(t + 60, y, f"{t:,.0f} us  (retrieval {100 * g / t:.0f} %)", va="center", fontsize=9.8, color=INK)
+        ax.barh(y, g, height=0.62, color=GP, edgecolor=SURF, linewidth=2)
+        ax.barh(y, t - g, left=g, height=0.62, color=NKI, edgecolor=SURF, linewidth=2)
+        ax.text(t + 80, y, f"{t:,.0f} µs ({100 * g / t:.0f}%)", va="center", fontsize=13.5, color=INK)
     ax.set_yticks(ys)
-    ax.set_yticklabels([d[0] for d in data], fontsize=10, color=INK)
+    ax.set_yticklabels([d[0] for d in data], fontsize=13.5, color=INK)
     ax.tick_params(axis="y", length=0)
-    ax.set_xlim(0, 8600)
-    ax.set_xlabel("Engram read-out time on one NeuronCore (us)")
+    ax.set_xlim(0, 9000)
+    ax.set_xlabel("Read-out time on one NeuronCore (µs)")
     ax.xaxis.grid(True, color=GRID, lw=0.8)
     ax.set_axisbelow(True)
-    from matplotlib.patches import Patch
-    ax.legend(handles=[Patch(color=GP, label="retrieval stage (gather), measured alone"),
-                       Patch(color=NKI, label="the rest: fp8 GEMM + gate (unchanged NKI)")],
-              loc="lower left", bbox_to_anchor=(0.0, 1.0), frameon=False, fontsize=9.6, ncol=2)
-    save(fig, "fig09_amdahl.png")
+    ax.legend(handles=[Patch(color=GP, label="table retrieval"), Patch(color=NKI, label="attention + gate")],
+              loc="lower left", bbox_to_anchor=(0.0, 1.0), frameon=False, fontsize=13, ncol=2)
+    save(fig, "fig12_amdahl.png")
 
 
 if __name__ == "__main__":
     fig_speedups()
-    fig_neuroncore()
+    fig_fpga_split()
+    fig_fpga_results()
     fig_toolchain()
     fig_engram_split()
     fig_gather()
     fig_amdahl()
     if os.path.exists(os.path.join(DATA, "hash_decode_bs10_gpsimd.csv")):
-        fig_timeline("hash_decode_bs10", "fig05_timeline_hash.png",
-                     ["NKI only: n-gram hashing, decode, 10 sequences (T=60)",
-                      "GPSIMD + NKI: the same hashing with one GPSIMD custom op"])
+        fig_timeline("hash_decode_bs10", "fig09_timeline_hash.png", ["NKI only", "GPSIMD + NKI"])
     if os.path.exists(os.path.join(DATA, "gather_t1024_gpsimd.csv.gz")):
-        fig_timeline("gather_t1024", "fig07_timeline_gather.png",
-                     ["NKI only: Engram retrieval stage, prefill chunk (T=1024)",
-                      "GPSIMD + NKI: hit compaction on GPSIMD, gather of the hits by NKI"])
+        fig_timeline("gather_t1024", "fig10_timeline_gather.png", ["NKI only", "GPSIMD + NKI"])
     if os.path.exists(os.path.join(DATA, "readout_t1024_gpsimd.csv.gz")):
-        fig_timeline("readout_t1024", "fig08_timeline_readout.png",
-                     ["NKI only: whole Engram read-out, prefill chunk (T=1024)",
-                      "GPSIMD + NKI: whole Engram read-out, prefill chunk (T=1024)"])
+        fig_timeline("readout_t1024", "fig11_timeline_readout.png", ["NKI only", "GPSIMD + NKI"])
