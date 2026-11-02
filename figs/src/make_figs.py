@@ -164,32 +164,28 @@ def load_fpga():
 
 
 def fig_fpga_results():
-    rows = load_fpga()
-    fig, ax = plt.subplots(figsize=(8.6, 4.6))
+    """Only the token counts where the GPU + 2 FPGAs estimate is faster than the GPU alone."""
+    rows = [r for r in load_fpga() if r["engram_gpu"] > r["boards2"]]
+    fig, ax = plt.subplots(figsize=(7.6, 4.6))
     w = 0.36
+    top = max(r["engram_gpu"] for r in rows)
     for i, r in enumerate(rows):
         g, f2 = r["engram_gpu"], r["boards2"]
         ax.bar(i - w / 2, g, width=w, color=NKI, edgecolor=SURF, linewidth=2)
         ax.bar(i + w / 2, f2, width=w, color=GP, edgecolor=SURF, linewidth=2)
         sp = g / f2
-        lab = (f"{sp:.2f}x\nfaster" if sp < 1.5 else f"{sp:.1f}x\nfaster") if sp >= 1 else f"{1 / sp:.1f}x\nslower"
-        ax.text(i, max(g, f2) * 1.3, lab, ha="center", va="bottom", fontsize=13.5, color=INK,
-                weight="bold" if sp >= 1 else "normal")
-    ax.set_yscale("log")
-    ax.set_ylim(0.3, 900)
-    ticks = [0.5, 1, 2, 5, 10, 20, 50, 100, 200]
-    ax.set_yticks(ticks)
-    ax.set_yticklabels([f"{t:g}" for t in ticks])
-    ax.minorticks_off()
+        ax.text(i, max(g, f2) + top * 0.04, f"{sp:.2f}x" if sp < 1.5 else f"{sp:.1f}x",
+                ha="center", va="bottom", fontsize=15, color=INK, weight="bold")
+    ax.set_ylim(0, top * 1.35)
     ax.set_xticks(range(len(rows)))
-    ax.set_xticklabels([f"{int(r['tokens']):,}" for r in rows], color=INK, fontsize=13.5)
+    ax.set_xticklabels([f"{int(r['tokens']):,}" for r in rows], color=INK, fontsize=14)
     ax.set_xlabel("Tokens")
-    ax.set_ylabel("Engram time (ms, log scale)")
+    ax.set_ylabel("Engram time (ms)")
     ax.yaxis.grid(True, color=GRID, lw=0.8)
     ax.set_axisbelow(True)
     ax.tick_params(axis="x", length=0)
-    ax.legend(handles=[Patch(color=NKI, label="GPU only"), Patch(color=GP, label="GPU + 2 FPGAs (est.)")],
-              loc="upper left", frameon=False, ncol=2, fontsize=13)
+    ax.legend(handles=[Patch(color=NKI, label="GPU only"), Patch(color=GP, label="GPU + 2 FPGAs")],
+              loc="upper left", frameon=False, ncol=2, fontsize=13.5)
     save(fig, "fig04_fpga_results.png")
 
 
