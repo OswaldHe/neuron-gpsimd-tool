@@ -1,7 +1,8 @@
 """Figures of BLOG.md.  python figs/src/make_figs.py  (writes figs/*.png)
 
 Figure 2 (fig02_pipeline.png) is figures/memory_manage_flow.pdf of arXiv:2603.29002, rendered at 300 dpi.
-Figure 5 (fig05_trainium_arch.png) is the AWS Neuron documentation diagram, copied from neuron-neff-doc/figs.
+Figure 5 (fig05_trainium_arch.png) puts two AWS Neuron documentation diagrams side by side (src/aws/): the Trainium3
+device (neuroncore-v4-overview.png, Trainium3 page) and a NeuronCore (nki-trn3-arch-2.png, Trainium3 NKI architecture guide).
 
 Figures 3-4 use figs/data/engram_gpu_fpga.csv (GPU-FPGA Engram experiment of HeteroLLM, Engram reference configuration).
 The other numbers come from nkiopt/README.md (median total_exec_time of 5 profiled executions) and the timeline CSVs
@@ -286,7 +287,7 @@ def fig_gather():
             ax.add_patch(Rectangle((x, -4.05), 0.8, 0.8, fc=fc, ec="none"))
             ax.text(x + 1.2, -3.65, lab, fontsize=13, va="center")
             x += 1.2 + 0.5 * len(lab) + 1.0
-    save(fig, "fig08_gather.png")
+    save(fig, "fig09_gather.png")
 
 
 # ----------------------------------------------------------------------------------------------- timelines
@@ -372,16 +373,37 @@ def fig_amdahl():
     save(fig, "fig12_amdahl.png")
 
 
+
+# ----------------------------------------------------------------------------- figure 5
+def fig_trainium_arch():
+    """the two Neuron documentation diagrams side by side on white, at a common height (no redrawing)"""
+    from PIL import Image
+    H, gap, pad = 760, 70, 20
+    parts = []
+    for name in ("trainium3_device.png", "trainium3_neuroncore.png"):
+        im = Image.open(os.path.join(HERE, "aws", name)).convert("RGBA")
+        bg = Image.new("RGBA", im.size, "white")
+        im = Image.alpha_composite(bg, im).convert("RGB")
+        parts.append(im.resize((round(im.width * H / im.height), H), Image.LANCZOS))
+    out = Image.new("RGB", (sum(p.width for p in parts) + gap + 2 * pad, H + 2 * pad), "white")
+    x = pad
+    for p in parts:
+        out.paste(p, (x, pad))
+        x += p.width + gap
+    out.save(os.path.join(FIGS, "fig05_trainium_arch.png"))
+    print("wrote fig05_trainium_arch.png")
+
 if __name__ == "__main__":
     fig_speedups()
     fig_fpga_split()
     fig_fpga_results()
+    fig_trainium_arch()
     fig_toolchain()
     fig_engram_split()
     fig_gather()
     fig_amdahl()
     if os.path.exists(os.path.join(DATA, "hash_decode_bs10_gpsimd.csv")):
-        fig_timeline("hash_decode_bs10", "fig09_timeline_hash.png", ["NKI only", "GPSIMD + NKI"])
+        fig_timeline("hash_decode_bs10", "fig08_timeline_hash.png", ["NKI only", "GPSIMD + NKI"])
     if os.path.exists(os.path.join(DATA, "gather_t1024_gpsimd.csv.gz")):
         fig_timeline("gather_t1024", "fig10_timeline_gather.png", ["NKI only", "GPSIMD + NKI"])
     if os.path.exists(os.path.join(DATA, "readout_t1024_gpsimd.csv.gz")):
