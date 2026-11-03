@@ -13,6 +13,7 @@ import csv
 import os
 
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -56,9 +57,9 @@ def doc(ax, x, y, w, h, text, fc, ec, fs=14, c=0.22):
     ax.text(x + w / 2, y + h / 2, text, ha="center", va="center", fontsize=fs, color=INK, linespacing=1.3)
 
 
-def badge(ax, x, y, n, r=0.19):
-    ax.add_patch(Circle((x, y), r, fc=INK, ec=SURF, lw=1.5, zorder=5))
-    ax.text(x, y, str(n), ha="center", va="center", fontsize=12.5, color=SURF, weight="bold", zorder=6)
+def badge(ax, x, y, n, r=0.19, fs=12.5):
+    ax.add_patch(Circle((x, y), r, fc=INK, ec=SURF, lw=1.5, zorder=7))
+    ax.text(x, y, str(n), ha="center", va="center", fontsize=fs, color=SURF, weight="bold", zorder=8)
 
 
 def arrow(ax, x0, y0, x1, y1, color=INK2, lw=1.8, style="-|>", ls="-"):
@@ -191,38 +192,169 @@ def fig_fpga_results():
 
 
 # ----------------------------------------------------------------------------------------------- figure 5
+MONO = "DejaVu Sans Mono"
+
+
+def icon_gear(ax, cx, cy, r, color, bg="#ffffff", teeth=8):
+    """A gear: a compiler."""
+    pts, step = [], 2 * np.pi / teeth
+    for i in range(teeth):
+        a0 = i * step
+        for da, rr in [(-0.30, 0.74), (-0.16, 1.0), (0.16, 1.0), (0.30, 0.74)]:
+            pts.append((cx + r * rr * np.cos(a0 + da * step), cy + r * rr * np.sin(a0 + da * step)))
+    ax.add_patch(Polygon(pts, closed=True, fc=color, ec=color, lw=1, zorder=4))
+    ax.add_patch(Circle((cx, cy), r * 0.32, fc=bg, ec=bg, zorder=5))
+
+
+def icon_syringe(ax, cx, cy, s, color, bg="#ffffff"):
+    """A syringe, needle down-left: injecting the operator into the NEFF."""
+    from matplotlib.transforms import Affine2D
+    tr = Affine2D().scale(s).rotate_deg(225).translate(cx, cy) + ax.transData
+    kw = dict(transform=tr, zorder=4)
+    ax.add_patch(Rectangle((-0.52, -0.17), 0.07, 0.34, fc=color, ec=color, **kw))            # plunger handle
+    ax.add_patch(Rectangle((-0.46, -0.04), 0.24, 0.08, fc=color, ec=color, **kw))            # plunger rod
+    ax.add_patch(Rectangle((-0.25, -0.21), 0.05, 0.42, fc=color, ec=color, **kw))            # finger flange
+    ax.add_patch(Rectangle((-0.20, -0.12), 0.48, 0.24, fc=bg, ec=color, lw=2.2, **kw))       # barrel
+    ax.add_patch(Rectangle((-0.02, -0.12), 0.30, 0.24, fc=color, ec=color, alpha=0.35, **kw))  # dose
+    for x in (0.02, 0.10, 0.18):
+        ax.plot([x, x], [0.12, 0.03], color=color, lw=1.6, transform=tr, zorder=5)            # graduations
+    ax.add_patch(Polygon([(0.28, -0.12), (0.37, -0.04), (0.37, 0.04), (0.28, 0.12)], closed=True,
+                         fc=color, ec=color, **kw))                                           # tip
+    ax.plot([0.37, 0.62], [0, 0], color=color, lw=2.2, solid_capstyle="round", transform=tr, zorder=4)  # needle
+
+
+def icon_chip(ax, cx, cy, s, color, bg="#ffffff"):
+    """A chip with pins: the NeuronCore that runs the NEFF."""
+    b = s * 0.62
+    for k in (-1, 0, 1):
+        o = k * b * 0.3
+        for (x0, y0, x1, y1) in [(cx + o, cy + b / 2, cx + o, cy + s / 2), (cx + o, cy - b / 2, cx + o, cy - s / 2),
+                                 (cx + b / 2, cy + o, cx + s / 2, cy + o), (cx - b / 2, cy + o, cx - s / 2, cy + o)]:
+            ax.plot([x0, x1], [y0, y1], color=color, lw=2.6, solid_capstyle="round", zorder=4)
+    ax.add_patch(FancyBboxPatch((cx - b / 2, cy - b / 2), b, b, boxstyle=f"round,pad=0,rounding_size={b * 0.12}",
+                                fc=color, ec=color, zorder=5))
+    ax.add_patch(Rectangle((cx - b * 0.22, cy - b * 0.22), b * 0.44, b * 0.44, fc=bg, ec=bg, zorder=6))
+
+
+def tool_box(ax, x, y, w, h, label, icon, color, fs=19):
+    """A tool: an icon above its name."""
+    box(ax, x, y, w, h, "", "#ffffff", INK2, r=0.22, lw=1.8)
+    icon(ax, x + w / 2, y + h * 0.67, {icon_gear: 0.3, icon_syringe: 0.72, icon_chip: 0.62}[icon], color)
+    ax.text(x + w / 2, y + h * 0.24, label, ha="center", va="center", fontsize=fs, family=MONO, color=INK)
+
+
+def file_box(ax, x, y, w, h, name, fc, ec, sub=None, fs=19, c=0.3):
+    """A file (folded corner) with its name and an optional second line."""
+    ax.add_patch(Polygon([(x, y), (x + w, y), (x + w, y + h - c), (x + w - c, y + h), (x, y + h)],
+                         closed=True, fc=fc, ec=ec, lw=2.0))
+    ax.plot([x + w - c, x + w - c, x + w], [y + h, y + h - c, y + h - c], color=ec, lw=1.6)
+    if sub:
+        ax.text(x + w / 2, y + h * 0.63, name, ha="center", va="center", fontsize=fs, family=MONO, color=INK)
+        ax.text(x + w / 2, y + h * 0.30, sub, ha="center", va="center", fontsize=fs - 3, family=MONO, color=INK2)
+    else:
+        ax.text(x + w / 2, y + h / 2, name, ha="center", va="center", fontsize=fs, family=MONO, color=INK)
+
+
 def fig_toolchain():
-    fig, ax = canvas(13.4, 4.4)
-    w, h = 1.9, 0.95
-    yt, ym, yb = 3.1, 1.72, 0.35
-    tool = dict(fc="#ffffff", ec=INK2, r=0.3)
-    # NKI lane
-    doc(ax, 0.45, yt, w, h, "kernel.py\ngp.call(…)", NKI_L, NKI)
-    box(ax, 2.85, yt, w, h, "⚙ neuronx-cc", fs=14, **tool)
-    doc(ax, 5.25, yt, w, h, "kernel.neff", NKI_L, NKI)
-    arrow(ax, 2.35, yt + h / 2, 2.85, yt + h / 2)
-    arrow(ax, 4.75, yt + h / 2, 5.25, yt + h / 2)
-    # operator lane
-    doc(ax, 0.45, yb, w, h, "op.cpp", GP_L, GP)
-    box(ax, 2.85, yb, w, h, "⚙ gpsimd-cc", fs=14, **tool)
-    doc(ax, 5.25, yb, w, h, "ops.so", GP_L, GP)
-    arrow(ax, 2.35, yb + h / 2, 2.85, yb + h / 2)
-    arrow(ax, 4.75, yb + h / 2, 5.25, yb + h / 2)
-    # tile addresses from the compiled NEFF into the operator build
-    arrow(ax, 5.55, yt, 4.45, yb + h)
-    ax.text(5.15, 2.2, "tile\naddresses", fontsize=12.5, color=INK2, va="center", ha="left")
-    # inject, final NEFF, run
-    box(ax, 7.65, ym, 1.7, h, "⚙ inject", fs=14, **tool)
-    arrow(ax, 7.15, yt + 0.3, 8.6, ym + h)
-    arrow(ax, 7.15, yb + h - 0.3, 8.6, ym)
-    doc(ax, 9.75, ym, 2.0, h, "final.neff\n+ KERNEL_CALL", NKI_L, NKI, fs=13.5)
-    arrow(ax, 9.35, ym + h / 2, 9.75, ym + h / 2)
-    box(ax, 12.15, ym, 1.15, h, "⚡ run", fs=14, **tool)
-    arrow(ax, 11.75, ym + h / 2, 12.15, ym + h / 2)
-    # step numbers (Section 3.1)
-    for n, (x, y) in enumerate([(0.45, yb + h), (0.45, yt + h), (2.85, yb + h), (7.65, ym + h), (12.15, ym + h)], 1):
-        badge(ax, x, y, n)
+    fig, ax = canvas(14.6, 6.0)
+    h = 1.35
+    yt, ym, yb = 4.45, 2.35, 0.25                 # NKI row, inject row, operator row
+    xs, xc, xo, xi, xf = 0.3, 3.35, 6.0, 8.95, 11.75   # columns: source, compiler, output, inject, final
+    ws, wc, wo, wi, wf = 2.55, 2.15, 2.25, 2.0, 2.55
+    mid = lambda y: y + h / 2
+    # NKI lane (blue)
+    file_box(ax, xs, yt, ws, h, "nki_kernel.py", NKI_L, NKI, sub="gp.call(…)")
+    tool_box(ax, xc, yt, wc, h, "neuronx-cc", icon_gear, NKI)
+    file_box(ax, xo, yt, wo, h, "kernel.neff", NKI_L, NKI)
+    arrow(ax, xs + ws, mid(yt), xc, mid(yt), lw=2.2)
+    arrow(ax, xc + wc, mid(yt), xo, mid(yt), lw=2.2)
+    # operator lane (orange)
+    file_box(ax, xs, yb, ws, h, "op.cpp", GP_L, GP)
+    tool_box(ax, xc, yb, wc, h, "gpsimd-cc", icon_gear, GP)
+    file_box(ax, xo, yb, wo, h, "ops.so", GP_L, GP)
+    arrow(ax, xs + ws, mid(yb), xc, mid(yb), lw=2.2)
+    arrow(ax, xc + wc, mid(yb), xo, mid(yb), lw=2.2)
+    # tile addresses on SBUF: read from the compiled NEFF, compiled into the operator
+    arrow(ax, xo + 0.45, yt, xc + wc - 0.35, yb + h, lw=2.2)
+    ax.text(xc + wc - 0.05, mid(ym) + 0.25, "Tile addresses\non SBUF", ha="right", va="center", fontsize=17,
+            color=INK2, linespacing=1.25)
+    # inject -> final NEFF -> run
+    tool_box(ax, xi, ym, wi, h, "inject", icon_syringe, GP)
+    arrow(ax, xo + wo, mid(yt) - 0.2, xi + wi * 0.35, ym + h, lw=2.2)
+    arrow(ax, xo + wo, mid(yb) + 0.2, xi + wi * 0.35, ym, lw=2.2)
+    file_box(ax, xf, ym, wf, h, "final.neff", NKI_L, NKI, sub="+ KERNEL_CALL")
+    arrow(ax, xi + wi, mid(ym), xf, mid(ym), lw=2.2)
+    xr, wr = xf + (wf - 2.0) / 2, 2.0
+    tool_box(ax, xr, yb, wr, h, "run", icon_chip, INK2)
+    arrow(ax, xf + wf / 2, ym, xf + wf / 2, yb + h, lw=2.2)
+    # step numbers (the list in "Overall Development and Deployment Flow")
+    for n, (x, y) in enumerate([(xs, yb + h), (xs, yt + h), (xc, yb + h), (xi, ym + h), (xr, yb + h)], 1):
+        badge(ax, x, y, n, r=0.27, fs=17)
     save(fig, "fig06_toolchain.png")
+
+
+# ----------------------------------------------------------------------------------------------- figure 7
+EV, EV_L = "#7b5cd6", "#ece6fb"                   # events block
+
+
+def fig_slot_layout():
+    """Byte layout of the join marker that gp.call emits and of the KERNEL_CALL that inject writes, with the values of
+    the n-gram hashing kernel (nkiopt/cases/ds41_ngram/build_dec_bs10/gpsimd: kernel.neff Pool0.bin slot 67,
+    final.neff Pool0.bin slot 68). Field offsets: ts_operands() and inject() in toolchain/bin/gpsimd-neff."""
+    W, H = 14.6, 7.35
+    fig, ax = canvas(W, H)
+    x0, cw, bh = 0.15, (W - 0.3) / 64, 1.3
+    X = lambda b: x0 + b * cw
+    WHITE = ("#ffffff", GRID)
+
+    def field(y, a, b, name, val=None, col=(OTHER_L, OTHER), fs=14.5, tc=INK, w=None):
+        x, wd = (X(a), (b - a + 1) * cw) if w is None else (a, w)
+        box(ax, x, y, wd, bh, "", col[0], col[1], r=0.06, lw=1.6)
+        cx = x + wd / 2
+        if val:
+            ax.text(cx, y + bh * 0.66, name, ha="center", va="center", fontsize=fs, color=tc, linespacing=1.15)
+            ax.text(cx, y + bh * 0.24, val, ha="center", va="center", fontsize=fs - 1.5, family=MONO, color=INK2,
+                    linespacing=1.15)
+        elif name:
+            ax.text(cx, y + bh / 2, name, ha="center", va="center", fontsize=fs, color=tc, linespacing=1.15)
+
+    def ruler(y, marks, xf=X):
+        for b in marks:
+            ax.text(xf(b), y - 0.12, str(b), ha="center", va="top", fontsize=12.5, color=MUTED)
+
+    # join marker emitted by gp.call (kernel.neff)
+    ya = H - 0.5 - bh
+    ax.text(x0, ya + bh + 0.3, "Example marker instruction", fontsize=16, weight="bold",
+            va="center")
+    for f in [(0, 3, "header", "0x43"), (4, 11, "events", None, (EV_L, EV)), (12, 15, "unused", None, WHITE, 14, MUTED),
+              (16, 19, "src\naddr", None, (NKI_L, NKI)), (20, 31, "src pattern\nstep[3] num[3]", None, (NKI_L, NKI)),
+              (32, 39, "dtype,\npartitions,\nALU ops", "int32, 128", (OTHER_L, OTHER), 13),
+              (40, 43, "imm 0"), (44, 47, "imm 1\n= tag", "join", (GP_L, GP)),
+              (48, 51, "dst\naddr", "0x4600", (DMA_L, DMA)),
+              (52, 63, "dst pattern\nstep[3] num[3]", "num = 48, 1, 1", (DMA_L, DMA))]:
+        field(ya, *f)
+    ruler(ya, range(0, 65, 8))
+    # zoom into the events block
+    zc, yz = 0.82, ya - 1.25 - bh
+    Z = lambda b: x0 + (b - 4) * zc
+    yk = ya - 0.5                                  # bracket under bytes 4-11, below the byte numbers
+    ax.plot([X(4), X(4), X(12), X(12)], [yk + 0.1, yk, yk, yk + 0.1], color=EV, lw=1.4)
+    for xa, xb in [(X(4), Z(4)), (X(12), Z(12))]:
+        ax.plot([xa, xb], [yk, yz + bh], color=EV, lw=1.3, ls=(0, (4, 3)))
+    for f in [(4, "wait\nmode", "≥"), (5, "wait\nsem.", "S[3]"), (6, "update\nmode", "+1"), (7, "update\nsem.", "S[3]")]:
+        field(yz, Z(f[0]), None, f[1], f[2], (EV_L, EV), 13, w=zc)
+    field(yz, Z(8), None, "wait threshold /\nupdate amount", "28", (EV_L, EV), 13.5, w=4 * zc)
+    ruler(yz, [4, 5, 6, 7, 8, 12], Z)
+    # KERNEL_CALL written by inject (final.neff)
+    yb = yz - 1.05 - bh
+    ax.text(x0, yb + bh + 0.3, "KERNEL_CALL", fontsize=16, weight="bold", va="center")
+    for f in [(0, 3, "header", "0x85"), (4, 11, "events", "S[3] += 9", (EV_L, EV)), (12, 12, "", None, (GP_L, GP)),
+              (13, 63, "unused (zero)", None, WHITE, 14.5, MUTED)]:
+        field(yb, *f)
+    ruler(yb, range(0, 65, 8))
+    ax.plot([X(12.5), X(12.5)], [yb, yb - 0.55], color=GP, lw=1.6)
+    ax.text(X(12.5), yb - 0.62, "operator index = 0", ha="center", va="top", fontsize=14, color=GP)
+    save(fig, "fig07_slot_layout.png")
 
 
 # ----------------------------------------------------------------------------------------------- figure 6
@@ -251,7 +383,7 @@ def fig_engram_split():
     arrow(ax, bx[3] + bw / 2, 3.35, bx[3] + bw / 2, 2.9)
     legend_row(ax, 0.2, 0.3, [(GP_L, GP, "GPSIMD custom op"), (NKI_L, NKI, "NKI"),
                               (OTHER_L, OTHER, "offline / collective")], fs=13)
-    save(fig, "fig07_engram_split.png")
+    save(fig, "fig08_engram_split.png")
 
 
 # ----------------------------------------------------------------------------------------------- figure 7
@@ -287,7 +419,7 @@ def fig_gather():
             ax.add_patch(Rectangle((x, -4.05), 0.8, 0.8, fc=fc, ec="none"))
             ax.text(x + 1.2, -3.65, lab, fontsize=13, va="center")
             x += 1.2 + 0.5 * len(lab) + 1.0
-    save(fig, "fig09_gather.png")
+    save(fig, "fig10_gather.png")
 
 
 # ----------------------------------------------------------------------------------------------- timelines
@@ -370,7 +502,7 @@ def fig_amdahl():
     ax.set_axisbelow(True)
     ax.legend(handles=[Patch(color=GP, label="table retrieval"), Patch(color=NKI, label="attention + gate")],
               loc="lower left", bbox_to_anchor=(0.0, 1.0), frameon=False, fontsize=13, ncol=2)
-    save(fig, "fig12_amdahl.png")
+    save(fig, "fig13_amdahl.png")
 
 
 
@@ -399,12 +531,13 @@ if __name__ == "__main__":
     fig_fpga_results()
     fig_trainium_arch()
     fig_toolchain()
+    fig_slot_layout()
     fig_engram_split()
     fig_gather()
     fig_amdahl()
     if os.path.exists(os.path.join(DATA, "hash_decode_bs10_gpsimd.csv")):
-        fig_timeline("hash_decode_bs10", "fig08_timeline_hash.png", ["NKI only", "GPSIMD + NKI"])
+        fig_timeline("hash_decode_bs10", "fig09_timeline_hash.png", ["NKI only", "GPSIMD + NKI"])
     if os.path.exists(os.path.join(DATA, "gather_t1024_gpsimd.csv.gz")):
-        fig_timeline("gather_t1024", "fig10_timeline_gather.png", ["NKI only", "GPSIMD + NKI"])
+        fig_timeline("gather_t1024", "fig11_timeline_gather.png", ["NKI only", "GPSIMD + NKI"])
     if os.path.exists(os.path.join(DATA, "readout_t1024_gpsimd.csv.gz")):
-        fig_timeline("readout_t1024", "fig11_timeline_readout.png", ["NKI only", "GPSIMD + NKI"])
+        fig_timeline("readout_t1024", "fig12_timeline_readout.png", ["NKI only", "GPSIMD + NKI"])

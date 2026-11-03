@@ -1,6 +1,6 @@
 ## Exploit the Native Hardware Heterogeneity: Custom GPSIMD Operator for Accelerating Emerging LLM Memory on AWS Trainium
 
-> Disclaimer: Every Trainium conclusion and experiment in this blog comes from the Neuron SDK 2.33 toolchain, run and measured on a single trn3.48xlarge instance. We installed the Neuron GPSIMD Toolchain v1.25, which is a legacy version used for trn1 instances. We then built the toolchain by reverse engineering how the Neuron runtime loads and runs GPSIMD code, so treat all of the information as reference only. The information does not necessarily reflect how AWS implements things internally.
+> Disclaimer: Every Trainium conclusion and experiment in this blog comes from the Neuron SDK 2.33 toolchain, run and measured on a single trn3.48xlarge instance. Everything is from open sourced code and packages. We installed the Neuron GPSIMD Toolchain v1.25, which is a legacy version used for trn1 instances. We then built the toolchain based on how the Neuron runtime loads and runs GPSIMD code, so treat all of the information as reference only. The information does not necessarily reflect how AWS implements things internally.
 
 #### High-level Summary
 
@@ -99,26 +99,26 @@ Although this is a promising plan, a major blocker for most developer on Trainiu
 
 ### Build and Use GPSIMD Custom Operators for Kernel Optimization
 
-The **Neuron Kernel Interface (NKI)** is the Python kernel language for Trainium [6]. Currently, NKI exposes the GPSIMD Engine only through built-in instructions on Trainium 3: tensor operations with `engine=gpsimd`, `iota`, `topk`, and the descriptor generation of indirect DMAs ("software DGE"). In the legacy SDK, there used to be a GPSIMD toolchain to create custom operator and integrate into `torch_xla` compiled kernel. However, this means if the user applied GPSIMD custom operator, the kernel can no longer be optimized with NKI. Furthermore, this package is deprecated on Trainium 3: when using the C++ custom-operator path (`AwsNeuronCustomOp`) that works on Trainium 1, the compiler rejects that path for Trainium 3 targets (error `NCC_EVRF030`). To make the whole stack works for Trainium, we reverse engineered and build a custom toolchain to inject the GPSIMD operator in Neuron Executable File Format (NEFF).
+The **Neuron Kernel Interface (NKI)** is the Python kernel language for Trainium to speedup computations. Currently, NKI exposes the GPSIMD Engine only through built-in instructions on Trainium 3: tensor operations with `engine=gpsimd`, `iota`, `topk`, and the descriptor generation of indirect DMAs ("software DGE"). In the legacy SDK, there used to be a GPSIMD toolchain to create custom operator and integrate into `torch_xla` compiled kernel. However, this means if the user applied GPSIMD custom operator, the kernel can no longer be optimized with NKI. Furthermore, this package is deprecated on Trainium 3: when using the C++ custom-operator path (`AwsNeuronCustomOp`) that works on Trainium 1, the compiler rejects that path for Trainium 3 targets (error `NCC_EVRF030`). Therefore, for Trainium, there is no standard way to integrating GPSIMD custom operator nowadays. To make the whole stack works for Trainium, we reverse engineered and build a custom toolchain to inject the GPSIMD operator in Neuron Executable File Format (NEFF).
 
 #### Overall Development and Deployment Flow
 
 The Neuron compiler turns an NKI kernel into a NEFF, which holds one instruction stream per engine [8]. Our toolchain does not change the compiler. The NKI kernel is compiled as usual, and the toolchain then edits the compiled NEFF to place each custom operator in the GPSIMD Engine's instruction stream. The rest of the NEFF, including the compiler's schedule of the other engines, stays as the compiler produced it. Figure 6 shows the flow in five steps:
 
-1. **Write** the operator in C++.
+1. **Write** the operator in C++ using the `gp::` namespace with the `gpsimd/gpsimd.hpp` header.
 2. **Mark** the call site in the NKI kernel with `gp.call(...)`, and compile the kernel with the NKI compiler as usual.
-3. **Build** the operator library: the toolchain reads the SBUF location of each tile from the compiled NEFF and compiles the C++ operator for the GPSIMD cores.
+3. **Build** the operator library: the toolchain reads the SBUF location of each tile from the compiled NEFF and compiles the C++ operator for the GPSIMD cores so that it can access the corresponding SBUF address.
 4. **Inject** the library into the NEFF, and replace the marked instructions with one `KERNEL_CALL` instruction.
-5. **Load and run** the NEFF with the Neuron runtime.
+5. **Load and run** the NEFF with the Neuron runtime, which will load the shared object for the operator when hit the `KERNEL_CALL` and run on GPSIMD.
 
 ![Figure 6: the toolchain](figs/fig06_toolchain.png)
-*Figure 6. Development and deployment flow; the numbers are the steps listed above. Blue: NKI kernel and NEFF. Orange: the GPSIMD operator. The compiled NEFF is edited, not regenerated.*
+*Figure 6. Overall development and deployment flow of building and using GPSIMD custom operator and connect with optimized NKI kernel.*
 
-`gpsimd-build` runs all five steps for an example directory, and `gp.compile` runs them from Python. The rest of this section follows the steps in order: step 1 in [Write Operators in C++](#write-operators-in-c), steps 2 to 4 in [Integrate the Custom Operator with NKI](#integrate-the-custom-operator-with-nki), and step 5 in [Runtime: What Happens Under the Hood](#runtime-what-happens-under-the-hood).
+`gpsimd-build` in our toolchain will handle all the compilation and injection process to produce the final NEFF file. The user only need to provide the C++ file for the GPSIMD operator and the NKI kernel python file with `gp.call()` that call the function in GPSIMD operator.
 
 #### Write Operators in C++
 
-A GPSIMD operator is a C++ function that runs on all 8 cores at the same time. As in a CUDA kernel, every core runs the same code and takes its share of the work by its core index. The runtime library gives each core typed views of the SBUF tiles passed by `gp.call`, its share of the partitions, and asynchronous iDMA copies between SBUF, HBM and the core's local RAM. The example below adds two int32 tiles:
+A GPSIMD operator is a C++ function that can express the execution of all 8 cores (SPMD similar to CUDA kernel or NKI SPMD for LNCs). The runtime library gives each core typed views of the SBUF tiles passed by `gp.call`, its share of the partitions, and asynchronous iDMA copies between SBUF, HBM and the core's local buffer. The example below adds two int32 tiles:
 
 ```cpp
 #include <gpsimd/gpsimd.hpp>
@@ -137,15 +137,36 @@ GPSIMD_OP(vadd_i32) {                         // extern "C" void vadd_i32(gp_cal
 }
 ```
 
-Each core copies its partitions into local RAM with the iDMA, computes there, and copies the result back. This staging matters: a load from local RAM takes 12 cycles, while a direct load from SBUF takes about 296 cycles (see the cost table in [Runtime: What Happens Under the Hood](#runtime-what-happens-under-the-hood)).
+The operator can access the core ID with `c.core()` (0 to 7) and the number of cores with `c.ncores()` (8). Most operators use the index to access partition of data through `c.split(n)`, which gives core k the k-th of 8 equal blocks of [0, n), or `c.blocks(n, rows)`, which walks that block in chunks of at most `rows` partitions. In the example above, each core takes 16 of the 128 partitions. The same split written by hand, with direct element access to SBUF instead of iDMA staging:
 
-The runtime also provides math functions, and a barrier, all-reduce, exclusive scan and a software lock for cooperation across cores. The cores cannot run hardware floating-point instructions, vector (FLIX) instructions or exclusive-access atomics: each of them hangs the core. The compiler wrapper rejects such code, and the runtime provides IEEE float32 in software instead (`gp::f32`, bit-identical to numpy).
+```cpp
+const uint32_t k = c.core(), K = c.ncores();             // this core (0..7) and the number of cores (8)
+const uint32_t P = o.partitions(), per = (P + K - 1) / K; // 16 partitions per core for P = 128
+for (uint32_t p = k * per; p < (k + 1) * per && p < P; ++p)
+    for (uint32_t i = 0; i < n; ++i)
+        o.store(p, i, a.load(p, i) + b.load(p, i));       // each SBUF load takes about 296 cycles
+if (k == 0) gp_printf("done: %u partitions\n", P);        // work for one core only
+```
+
+In practice, an operator rarely accesses SBUF element by element. As in the first example, it copies a block of its partitions into local RAM with `c.fetch`, computes there, and writes the result back with `c.flush`, because local RAM is much faster to access than SBUF.
+
+| Group | Functions | Purpose |
+|---|---|---|
+| Cores and work split | `c.core()`, `c.ncores()`, `c.split(n)`, `c.partitions(t)`, `c.blocks(n, rows)` | this core's index and its share of the work |
+| Tiles | `c.in<T>(k)`, `c.out<T>(k)` | views of the SBUF tiles passed by `gp.call`; `T` is `int8_t` to `uint32_t`, `gp::f32`, `gp::bf16` or `gp::f16` |
+| Element access | `t.load(p, i)`, `t.store(p, i, v)`, `t.row(p)`, `t.partitions()`, `t.elems()`, `t.contiguous()`, `t.span()`, `t.offset(i)` | element `i` of partition `p`, row-major over the free dimensions |
+| iDMA copies | `c.fetch(t, p, n, local)`, `c.flush(t, p, n, local)`, `c.dma(dst, src, bytes)`, `c.dma_2d(dst, src, row_bytes, nrows, src_pitch, dst_pitch)`, `c.dma_wait(ticket)`, `c.dma_wait_all()` | asynchronous copies between local RAM, SBUF and HBM, completed in order |
+| HBM | `gp::hbm_ptr<T>(params, k)`, `gp::hbm_mapped(params)` | direct access to HBM tensors that the runner maps |
+| Cooperation across cores | `c.barrier()`, `c.allreduce_add(v)`, `c.allreduce_max(v)`, `c.allreduce_min(v)`, `c.exscan_add(v, &total)`, `c.lock()`, `c.unlock()`, `c.atomic_add(word, v)`, `c.shared(&n)` | synchronization and data exchange through the call's SBUF scratch tile; all cores must call them in the same order |
+| Integer | C++ integer arithmetic, including 64-bit `* / %`; `memcpy`, `memmove`, `memset`, `memcmp`; inline assembly of base-ISA instructions such as `muluh` | 64-bit operations run as runtime helpers |
+| Floating point | `gp::f32` (`+ - * /`, comparisons, `to_i32()`), `gp::fma`, `sqrt`, `min`, `max`, `abs`, `floor`, `ceil`, `trunc`, `rint`, `round`, `ldexp`; `gp::bf16`, `gp::f16`; `GP_F32(x)` | IEEE float32 in software, bit-identical to numpy |
+| Math | `gp::math::exp`, `log`, `tanh`, `sigmoid`, `sin`, `cos`, `gelu`, `rsqrt`, `isnan`, `isinf`, `copysign`, `frexp` | float32 functions |
 
 Next, we show how an NKI kernel calls this function.
 
 #### Integrate the Custom Operator with NKI
 
-**Mark the call site.** In the NKI kernel, `gp.call` takes the operator name and the SBUF tiles that the operator reads and writes:
+In the NKI kernel, `gp.call` takes the operator name and the SBUF tiles that the operator reads and writes:
 
 ```python
 import gpsimd_nki as gp
@@ -160,7 +181,7 @@ def kernel(a, b):
     return out
 ```
 
-Because the NKI compiler does not know custom operators, `gp.call` cannot emit the call itself. Instead, it emits **marker instructions**: ordinary GPSIMD Engine instructions (`TENSOR_SCALAR_ARITH_OP` and `MEMSET`) whose immediate operand carries a tag (`2^20 + 4096·site + 512·role + 32·argument + chunk`). The tag tells the toolchain which call site, role and tile a marker belongs to. The markers are placeholders that make the compiler prepare what the real operator needs:
+Because the NKI compiler does not know custom operators, `gp.call` cannot emit the call itself. Instead, it emits **marker instructions**: ordinary GPSIMD Engine instructions (`TENSOR_SCALAR_ARITH_OP` and `MEMSET`) whose immediate operand carries a tag (`2^20 + 4096·site + 512·role + 32·argument + chunk`) so that the injector will not confuse with other instructions. The tag tells the toolchain which call site, role and tile a marker belongs to. The marker indicates what the GPSIMD operator will access and modify:
 
 | Marker | What it does | What the compiler then does for the operator |
 |---|---|---|
@@ -169,19 +190,39 @@ Because the NKI compiler does not know custom operators, `gp.call` cannot emit t
 | chain | links the markers through a small token tile | orders every producer of an input before the call and every consumer of an output after it |
 | fill | writes a scratch tile | reserves SBUF scratch for cooperation across cores |
 
-The markers touch whole tiles, because the compiler tracks dependencies per element range and deletes the producers of any tile region that nobody reads.
+Next, the toolchain analyzes the compiled NEFF and injects the operator into it. A NEFF is a container with a 1024-byte header followed by a gzip-compressed tar archive.
 
-**Build the operator library.** `gpsimd-neff analyze` reads the compiled `kernel.neff` and finds the tagged markers in the GPSIMD Engine's instruction stream (`Pool0.bin`). The marker operands give the SBUF location of every tile: the first partition, the number of partitions, the byte offset inside a partition, the data type, and the free-axis access pattern. The result is `sites_resolved.json`. `gpsimd-cc` then compiles the operator with the Xtensa compiler shipped in the Neuron SDK (`xt-clang`, base instruction set only) and links three parts into the library `ops.so`:
+```text
+kernel.neff
+├── [header, 1024 B]          payload size, MD5 of the payload, and other metadata
+└── [payload, tar.gz]
+    ├── neff.json             top-level graph: input tensors -> kernel -> output tensors
+    ├── kelf-0.json           list of subgraphs and the target ("mariana" = Trainium 3)
+    ├── info.json             compiler and NKI versions
+    └── sg00/                 program of one physical core
+        ├── def.json          memory variables, DMA queues and their semaphores, engine-to-stream map
+        ├── tensor_map.json   data type, shape and layout of each input and output tensor
+        ├── PE0.bin           Tensor Engine instruction stream
+        ├── Activation0.bin   Scalar Engine instruction stream
+        ├── DVE0.bin          Vector Engine instruction stream
+        ├── Pool0.bin         GPSIMD Engine instruction stream
+        ├── SP0.bin           Sync Engine instruction stream
+        ├── {PE0,Activation0,DVE0,Pool0,SP0}.json             description of each stream
+        ├── act_info.json, <set>.json, <set>_{bkt,ctrl}.bin   activation tables of the Scalar Engine
+        ├── default_*_table.bin                               Vector Engine microcode tables
+        └── debug_info_*.dbg                                  debug information
+```
 
-| Part | Content |
-|---|---|
-| Call-site table | the tile locations of every call site, generated from `sites_resolved.json`, and one entry function `<operator>__s<site>` per call site |
-| Runtime (`rt.c`) | dispatch on all 8 cores, the iDMA driver, barrier and reductions, a log ring, and a per-core receipt |
-| Firmware layout | code at `0x01000000`, data at `0x02000000`, a GNU build-id, and one ELF note (owner `Neuron`, type 2) per entry function |
+`neff.json` describes the NEFF as a graph from the input tensors through the kernel to the output tensors, `kelf-0.json` lists the subgraphs, and `info.json` records the compiler versions. Each instruction stream (`<engine>0.bin`) is an array of 64-byte instructions. Figure 7 shows the layout of the two instructions that the toolchain reads and writes, with the values of the n-gram hashing kernel. The first 12 bytes have the same layout for every opcode: a header that starts with the opcode, and the **events block**, which holds one semaphore wait and one semaphore update. The rest of the slot holds the operands. A tensor operand is an address or an access pattern in NKI's `.ap()`. 
 
-The tile addresses are compiled into the library, because we did not find a way for the operator to read the `KERNEL_CALL` operands at run time. Code must fit in 64 KB and static data in about 7 KB, so large buffers live on the stack (up to 64 KB in our examples).
+![Figure 7: instruction layouts](figs/fig07_slot_layout.png)
+*Figure 7. Layout of the 64-byte instructions that the toolchain reads and writes, with the values of the n-gram hashing call site. Top: the join marker emitted by `gp.call`, with its events block enlarged. Bottom: the `KERNEL_CALL` that replaces the markers.*
 
-`gpsimd-neff inject` then does the part that the compiler would do if it supported custom operators. A NEFF is a 1024-byte header plus a tar archive with one instruction stream per engine [8]. Injection adds two files and one key to the archive:
+The engines run independently and synchronize only through **semaphores**. When an instruction finishes, it can add to a semaphore: GPSIMD Engine instructions use S[3], and DMA transfers use the semaphores of their queue. A wait such as `S[3] >= 28` in Figure 7 counts the increments since the start of the kernel, so the schedule of the whole kernel is encoded in these counts. Adding or removing an instruction that increments a semaphore shifts every later wait on that semaphore, which is why injection must modify the events bytes in the instructions.
+
+`gpsimd-neff analyze` reads the compiled `kernel.neff` and finds the tagged markers in the GPSIMD Engine's instruction stream (`Pool0.bin`). The marker operands give the SBUF location of every tile: the first partition, the number of partitions, the byte offset inside a partition, the data type, and the free-axis access pattern. In the join marker of Figure 7, which writes the output tile of the n-gram hashing call site, the second immediate holds the tag `2^20 + 512·5` (site 0, role 5: join). The destination address is 0x4600, and the operand covers 128 partitions with 48 int32 values each. Correspondingly, we hardcode the SBUF addresses in the custom operator.
+
+`gpsimd-neff inject` adds two files and one key to the subgraph folder, rewrites the instruction streams, and repacks the archive with a new payload size and MD5 in the header:
 
 ```text
 final.neff
@@ -192,7 +233,7 @@ final.neff
     └── Pool0.bin                   markers replaced by one KERNEL_CALL per call site
 ```
 
-In `Pool0.bin`, the markers of each call site become one `KERNEL_CALL` (opcode `0x85`) at the position of the site's first output marker. Byte 12 of the `KERNEL_CALL` is the index of the operator in `gpsimd_kernels_def.json`. The other markers become `EVENT_SEMAPHORE` instructions that keep the markers' waits, and the fill marker becomes a real `MEMSET` that clears the scratch tile. The bytes below come from the n-gram hashing kernel of the case study:
+In `Pool0.bin`, the markers of each call site become one `KERNEL_CALL` (opcode `0x85`) at the position of the site's first output marker. Byte 12 of the `KERNEL_CALL` is the index of the operator in `gpsimd_kernels_def.json`, and the other operand bytes are zero. The other markers become `EVENT_SEMAPHORE` instructions that keep the markers' waits, and the fill marker becomes a real `MEMSET` that clears the scratch tile. The bytes below come from the n-gram hashing kernel of the case study:
 
 ```text
 // Pool0.bin of kernel.neff (before), bytes 0-11
@@ -204,46 +245,28 @@ slot 68:  85 10 00 00 00 00 15 03 09 00 00 00   KERNEL_CALL             operator
 slot 69:  d4 10 00 00 05 03 00 00 1e 00 00 00   PSEUDO_DMA_DIRECT2D     wait S[3] >= 30
 ```
 
-The hard part of injection is keeping the synchronization correct. Engines synchronize only through semaphores [8]: GPSIMD Engine instructions report completion by adding 1 to semaphore S[3], and a consumer waits until S[3] reaches a count. The 9 markers of this call site each added 1 to S[3], so the `KERNEL_CALL` adds 9 when the operator finishes, and every count that the program waits for stays reachable. This is the same idea as replacing a DMA with an `EVENT_SEMAPHORE` in [8]. The new `MEMSET` adds one more increment, so the injector raises every later wait on S[3], in all five engine programs, by one (29 becomes 30 above). Before injection, a wait for a later GPSIMD Engine instruction also implied that the markers had finished. After the renumbering, every wait covers the same instruction as before and also the `KERNEL_CALL` of every earlier call site.
-
-The injector also supports NKI's dynamic control flow (`nl.fori_loop` with a trip count loaded into a register at run time), which the table retrieval needs. The compiler splits such a program into blocks. At each block boundary, every engine drains, synchronizes and resets its semaphores (`EVENT_SEMAPHORE_RANGE_CLEAR`, opcode `0xB0`). The injector therefore renumbers waits only up to the first reset of each engine, requires every `gp.call` to come before the first dynamic loop, and relocates the absolute target of the jump instruction (opcode `0xDD`) after it inserts slots.
+The main challenge of injector is keeping track of the semaphore. The 9 markers of this call site each added 1 to S[3], so the replaced `KERNEL_CALL` instruction need to add 9 when the operator finishes. Before injection, a wait for a later GPSIMD Engine instruction also implied that the markers had finished. After the renumbering, every wait covers the same instruction as before and also the `KERNEL_CALL` of every earlier call site.
 
 #### Runtime: What Happens Under the Hood
 
-When the Neuron runtime loads the NEFF, it reads `gpsimd_kernels_def`, and the firmware copies `ops.so` from HBM into the local RAM of all 8 cores with the iDMA. At each `KERNEL_CALL`, the firmware calls the operator's entry function on all 8 cores, with the core index as an argument.
+When the Neuron runtime loads the NEFF, it reads `gpsimd_kernels_def`, and the firmware copies `ops.so` from HBM into the local RAM of all 8 cores with the iDMA. At each `KERNEL_CALL`, the firmware calls the operator's entry function on all 8 cores. The entry function reads the core index from `PRID` and calls the operator.
 
-The cores reach SBUF and HBM through **address-translation windows**. Our runner, `gpsimd-run` (a C++ program on libnrt), programs one window over PCIe BAR0 after it loads the NEFF: SBUF partition `p` appears at core address `0xD0000000 + p × 0x40000`. Further windows map HBM tensors from `0xE0000000` (512 MB). During a call, the runtime borrows the iDMA channel from the firmware and restores the channel's descriptor pointer at the end of the call; otherwise, the firmware fails when the model stops.
-
-After every execution, each core writes a **receipt**: its processor id, the number of calls, the call sites it ran, its cycle count and its status. The receipts prove that the operator ran on the 8 GPSIMD cores and not on the host. `gpsimd-run` also compares every output with a reference, byte for byte. The toolchain has 19 examples, all bit-exact on the device. They cover integer and float data types, cooperation across cores, SBUF views, direct HBM access and several call sites per kernel. A separate test covers dynamic control flow.
-
-Whether a step is worth a GPSIMD operator depends mostly on two costs: the fixed cost of a call, and the cost of reaching memory from the cores. These are the costs we measured (with `toolchain/probes/bench` and the case study; 1 cycle = 0.83 ns):
-
-| Item | Cost |
-|---|---|
-| `KERNEL_CALL` overhead (call, dispatch, return) | about 2.6 µs |
-| local RAM load / store | 12 / 7 cycles |
-| SBUF load / store through the window | about 296 / 19 cycles |
-| iDMA copy SBUF -> local RAM | about 600 cycles for 4 KB; 128 cycles per KB for 16 KB |
-| 32-bit integer multiply / divide | 3 / 20 cycles |
-| software float32 add / multiply | 117 / 97 cycles |
-| barrier over the 8 cores | about 4,600 cycles |
-
-In short, the GPSIMD cores are fast at integer work in local RAM and slow at floating point, and every call costs about 2.6 µs. A step is therefore worth an operator only if the operator saves more than the 2.6 µs that the call costs. Next, we apply the toolchain to Engram.
+The cores reach SBUF and HBM through address-translation windows. `gpsimd-run` (a C++ program on libnrt) programs one window over PCIe BAR after it loads the NEFF. During a call, the runtime borrows the iDMA channel from the firmware and restores the channel's descriptor pointer at the end of the call. After every execution, each core writes a receipt: its processor id, the number of calls, the call sites it ran, its cycle count and its status. The receipts prove that the operator ran on the 8 GPSIMD cores instead on the CPU host. 
 
 ---
 
 ### Accelerating Engram in DeepSeek-V4.1-Flash with the GPSIMD Engine
 
-In this case study, we accelerate the Engram computation of the DeepSeek-V4.1-Flash port for Trainium 3 [7] with two GPSIMD operators. Figure 7 shows how one Engram layer is split between the GPSIMD cores and NKI on one NeuronCore. Compared with the GPU-FPGA split of Figure 3, the cut is finer: the GPSIMD cores take only the integer steps, which are the n-gram hashing and the hit compaction of the table retrieval. The gathers, the gate and the projection GEMM stay in NKI.
+In this case study, we accelerate the Engram computation of the DeepSeek-V4.1-Flash port for Trainium 3 [7] with two GPSIMD operators. Figure 8 shows how one Engram layer is split between the GPSIMD cores and NKI on one NeuronCore. Compared with the GPU-FPGA split of Figure 3, the cut is finer: the GPSIMD cores take only the integer steps, which are the n-gram hashing and the hit compaction of the table retrieval. The gathers, the gate and the projection GEMM stay in NKI.
 
-![Figure 7: Engram on the memory processing pipeline](figs/fig07_engram_split.png)
-*Figure 7. The Engram computation of one layer in the four-step memory processing pipeline of [1], split between GPSIMD custom operators and NKI.*
+![Figure 8: Engram on the memory processing pipeline](figs/fig08_engram_split.png)
+*Figure 8. The Engram computation of one layer in the four-step memory processing pipeline of [1], split between GPSIMD custom operators and NKI.*
 
 The baseline is the hand-optimized NKI code of the port (branch `deepseek_v41_trn3`, commit `3b74533`). The port splits each Engram table by row over 64 ranks (6.0M rows, 3.1 GB per rank). Each rank reads only the rows it holds into `emb` and leaves the other rows zero, and an all-reduce over the 64 ranks then completes `emb`. For a fair comparison, each experiment copies the port's NKI helper modules without changes, runs the whole Engram computation on one NeuronCore, and changes only the part named in each section. The table shard has the deployed size (6,000,097 rows, 3.1 GB) with random values, and the row ids follow the hash distribution of the model. The collectives are not run. Latency is the median `total_exec_time` of 5 profiled executions in Neuron Explorer [6]. Every output of the GPSIMD version is checked against a numpy reference and against the NKI version: the n-gram ids equal an exact Python-integer reference, `emb` is exact, and the read-out output is bit-identical to the output of the port.
 
 In the NKI port, two steps do work that the dense engines are not built for. The hash emulates 64-bit integer arithmetic with long chains of 32-bit and fp32 instructions, and the table retrieval fetches and masks every row, although only 1.5% of the lookups hit the rank. We replace each of the two with one GPSIMD operator.
 
-#### n-gram Hashing (86.95 µs to 48.45 µs, 1.79x)
+#### n-gram Hashing
 
 The port computes the n-gram ids of both Engram layers (48 ids per token) once per decode step, in its step prologue. A decode step of 10 sequences verifies 1 + 5 drafted tokens per sequence, so the hash runs on T = 60 rows.
 
@@ -265,27 +288,25 @@ if (r >= p) r -= p;
 if (r >= p) r -= p;
 ```
 
-Figure 8 shows where the time goes. Both versions spend the first 34 µs on the same NKI window gathers. After the gathers, the NKI version runs a long chain of small instructions on the Vector Engine and the GPSIMD built-ins for 62 µs, while the GPSIMD version runs one 19.5 µs `KERNEL_CALL`. Without counting semaphore waits, the GPSIMD version issues 107 instructions instead of 324. At decode, the hash drops from 86.95 µs to 48.45 µs (1.79x).
+Figure 9 shows where the time goes. Both versions spend the first 34 µs on the same NKI window gathers. After the gathers, the NKI version runs a long chain of small instructions on the Vector Engine and the GPSIMD built-ins for 62 µs, while the GPSIMD version runs one 19.5 µs `KERNEL_CALL`. Without counting semaphore waits, the GPSIMD version issues 107 instructions instead of 324. At decode, the hash drops from 86.95 µs to 48.45 µs (1.79x).
 
-![Figure 8: hashing timelines](figs/fig08_timeline_hash.png)
-*Figure 8. One profiled execution of the hashing at decode (10 sequences, T = 60). The window gathers (first 34 µs) are the same NKI code in both versions. The NKI arithmetic takes the next 62 µs; the GPSIMD operator takes 19.5 µs.*
+![Figure 9: hashing timelines](figs/fig09_timeline_hash.png)
+*Figure 9. One profiled execution of the hashing at decode (10 sequences, T = 60). The window gathers (first 34 µs) are the same NKI code in both versions. The NKI arithmetic takes the next 62 µs; the GPSIMD operator takes 19.5 µs.*
 
 The operator was not faster from the start. The first version processed one row at a time and reduced each value with Horner's rule over 8-bit chunks, with one 32-bit Barrett step per chunk (5 steps per value). At 93.8 µs, it was slower than NKI (0.93x). Processing column by column keeps the constants of each prime in registers, and skipping the padding rows of the 128-row tile brought the time to 62.2 µs. The final 64-bit Barrett reduction above needs 6 multiplies and at most 3 corrections per value, for 48.45 µs.
 
 The gain is smaller on full prefill tiles: 531.1 µs to 449.7 µs (1.18x) at T = 1024, and 1055.6 µs to 890.6 µs (1.19x) at T = 2048. On 128-row tiles, each NKI instruction does useful work on all 128 partitions, while at decode the same chain runs on 60 rows. (The port hashes prefill chunks on the host, so the prefill numbers show what a device-side hash would cost.)
 
-NKI has no 64-bit integer multiply, so the NKI version can only emulate it with lookup tables and fp32 estimates. On the GPSIMD cores, `MULL` and `MULUH` compute the same products exactly in registers.
-
-#### Table Retrieval (506.9 µs to 102.4 µs, 4.95x)
+#### Table Retrieval
 
 Each hash column j covers its own range of about 16M global rows, and rank r holds 6.0M consecutive rows. A rank's shard therefore overlaps at most 2 of the 24 columns of a layer, and only about 0.375 of a token's 24 lookups (1.5%) hit the rank. In our prefill chunk of T = 1024 tokens, rank 21 holds 372 of the 24,576 rows.
 
-The port's `engram_gather` cannot know in advance which ids hit, because NKI needs static shapes. The port therefore computes a mask for every id, issues one indirect DMA of 128 rows per 128-token tile and hash column (192 DMAs at T = 1024), and multiplies the result by the mask (Figure 9, left). Every index of an indirect DMA costs about 5.5 ns of descriptor generation on the GPSIMD Engine, even when the index is marked out of bounds and skipped: in a separate test, 64 gathers of 640 rows took 224 µs whether 100%, 25% or 0% of the indices were valid. The 98.5% of indices that miss therefore cost as much as the hits.
+The port's `engram_gather` cannot know in advance which ids hit, because NKI needs static shapes. The port therefore computes a mask for every id, issues one indirect DMA of 128 rows per 128-token tile and hash column (192 DMAs at T = 1024), and multiplies the result by the mask (Figure 10, left). Every index of an indirect DMA costs about 5.5 ns of descriptor generation on the GPSIMD Engine, even when the index is marked out of bounds and skipped: in a separate test, 64 gathers of 640 rows took 224 µs whether 100%, 25% or 0% of the indices were valid. The 98.5% of indices that miss therefore cost as much as the hits.
 
-![Figure 9: masked gather vs compacted gather](figs/fig09_gather.png)
-*Figure 9. The ids of 16 tokens of one Engram layer on rank 21; only hash columns 7 and 8 overlap the rank's rows. Left: the NKI port fetches every row and masks the misses. Right: a GPSIMD operator lists the hits, and NKI fetches only those rows. The totals below the grids are for T = 1024.*
+![Figure 10: masked gather vs compacted gather](figs/fig10_gather.png)
+*Figure 10. The ids of 16 tokens of one Engram layer on rank 21; only hash columns 7 and 8 overlap the rank's rows. Left: the NKI port fetches every row and masks the misses. Right: a GPSIMD operator lists the hits, and NKI fetches only those rows. The totals below the grids are for T = 1024.*
 
-The GPSIMD version lists the hits first and fetches only those rows (Figure 9, right). One operator, `engram_hits`, replaces the gather loop, and one short NKI loop fetches the hits:
+The GPSIMD version lists the hits first and fetches only those rows (Figure 10, right). One operator, `engram_hits`, replaces the gather loop, and one short NKI loop fetches the hits:
 
 ```cpp
 // GPSIMD: each core scans its 16 partitions (all tiles, all 24 columns) after one iDMA fetch
@@ -305,14 +326,12 @@ reg = nisa.register_alloc(); nisa.register_load(reg, cnt_sb)
 nl.fori_loop(0, reg, chunk, step=1)     # chunk(b): load 128 (table row, emb row) pairs, gather, scatter
 ```
 
-At T = 1024, the operator takes 36 µs, and NKI then needs 6 indirect DMAs (3 gathers and 3 scatters) instead of 192 gathers. The retrieval stage drops from 506.9 µs to 102.4 µs (4.95x), and from 980.5 µs to 200.7 µs (4.89x) at T = 2048. Figure 10 shows the two profiles. In the NKI version, the GPSIMD Engine is busy with descriptor generation and the Vector Engine with mask arithmetic for the whole stage. In the GPSIMD version, one 36 µs operator call and 6 DMAs replace this work.
+At T = 1024, the operator takes 36 µs, and NKI then needs 6 indirect DMAs (3 gathers and 3 scatters) instead of 192 gathers. The retrieval stage drops from 506.9 µs to 102.4 µs (4.95x), and from 980.5 µs to 200.7 µs (4.89x) at T = 2048. Figure 11 shows the two profiles. In the NKI version, the GPSIMD Engine is busy with descriptor generation and the Vector Engine with mask arithmetic for the whole stage. In the GPSIMD version, one 36 µs operator call and 6 DMAs replace this work.
 
-![Figure 10: retrieval timelines](figs/fig10_timeline_gather.png)
-*Figure 10. One profiled execution of the retrieval stage (T = 1024). Top: 192 indirect DMAs and their masks. Bottom: the `engram_hits` operator (orange, 36 µs), then 3 gathers and 3 scatters of hit rows.*
+![Figure 11: retrieval timelines](figs/fig11_timeline_gather.png)
+*Figure 11. One profiled execution of the retrieval stage (T = 1024). Top: 192 indirect DMAs and their masks. Bottom: the `engram_hits` operator (orange, 36 µs), then 3 gathers and 3 scatters of hit rows.*
 
-**Decode needs a static schedule (62.1 µs to 24.7 µs, 2.51x).** At decode (T = 60), the run-time loop costs more than it saves. At every block boundary of `nl.fori_loop`, every engine drains and synchronizes. This stopped the weight stream of the following GEMM from overlapping with the gather, and with the loop, the whole read-out was 0.98x the NKI version. A token has at most 2 hits, so a second operator, `engram_hits_t`, writes the hits directly in the layout of a fixed number of indirect DMAs (2 gathers and 2 scatters per 128-token tile), with the unused entries marked out of bounds. With this static schedule, the retrieval stage takes 24.7 µs instead of 62.1 µs (2.51x), and the read-out keeps its overlap.
-
-NKI alone cannot do this compaction efficiently. `nonzero_with_count` compacts within one partition row, so the ids would first need a different layout, and the compacted indices would need a second indirect gather. Skipped indices cost as much as valid ones, and a run-time loop costs 2.4 µs per iteration.
+At decode (T = 60), the run-time loop costs more than it saves. At every block boundary of `nl.fori_loop`, every engine drains and synchronizes. This stopped the weight stream of the following GEMM from overlapping with the gather, which slows down the kernel. A token has at most 2 hits, so a second operator, `engram_hits_t`, writes the hits directly in the layout of a fixed number of indirect DMAs (2 gathers and 2 scatters per 128-token tile), with the unused entries marked out of bounds. With this static schedule, the retrieval stage takes 24.7 µs instead of 62.1 µs (2.51x), and the read-out keeps its overlap.
 
 #### Results and Analysis
 
@@ -333,15 +352,10 @@ The table below lists all results. The read-out is one Engram layer: table retri
 | | prefill chunk, T = 1024 | 7256.9 µs | 6387.5 µs | **1.14x** | | |
 | | prefill chunk, T = 2048 | 14588.4 µs | 12743.4 µs | **1.14x** | | |
 
-Because the projection and the gate are unchanged, the speedup of the whole read-out depends on how much of the read-out the retrieval stage takes. Figure 11 shows the whole read-out at T = 1024. The GEMM on the Tensor Engine reads `emb`, so in the NKI version, most of the GEMM runs after the last gathered rows arrive at about 506 µs. In the GPSIMD version, the GEMM starts at 124 µs. The GEMM ends at 1,717 µs in the NKI version and at 1,318 µs in the GPSIMD version, about 400 µs earlier. The gate after the GEMM takes the same 1.66 ms on the Vector Engine in both versions.
+Because the projection and the gate are unchanged, the speedup of the whole read-out depends on how much of the read-out the retrieval stage takes. Figure 12 shows the whole read-out at T = 1024. The GEMM on the Tensor Engine reads `emb`, so in the NKI version, most of the GEMM runs after the last gathered rows arrive at about 506 µs. In the GPSIMD version, the GEMM starts at 124 µs. The GEMM ends at 1,717 µs in the NKI version and at 1,318 µs in the GPSIMD version, about 400 µs earlier. The gate after the GEMM takes the same 1.66 ms on the Vector Engine in both versions.
 
-![Figure 11: whole read-out timelines](figs/fig11_timeline_readout.png)
-*Figure 11. One profiled execution of the whole Engram read-out (T = 1024). The GPSIMD operator (orange, 36 µs) lets the GEMM start about 400 µs earlier; the rest of the read-out is unchanged.*
-
-![Figure 12: Amdahl's law for the read-out](figs/fig12_amdahl.png)
-*Figure 12. The read-out split into the table retrieval stage (measured alone) and the rest (the total minus the retrieval stage). The percentage is the share of table retrieval.*
-
-Figure 12 shows the effect of Amdahl's law. The retrieval stage is 14% to 15% of the NKI read-out in prefill, and GPSIMD reduces the stage to 3%. The 404 µs saved in the stage at T = 1024 become 394 µs saved in the read-out (1.13x), and the 780 µs saved at T = 2048 become 840 µs (1.14x). At decode, the read-out of 60 tokens is dominated by streaming the 157 MB fp8 weight matrix, and the gain is 697.1 µs to 681.0 µs (1.02x). With the n-gram hashing added, the whole Engram becomes 1.05x faster at decode and 1.14x faster in prefill (Figure 1).
+![Figure 12: whole read-out timelines](figs/fig12_timeline_readout.png)
+*Figure 12. One profiled execution of the whole Engram read-out (T = 1024). The GPSIMD operator (orange, 36 µs) lets the GEMM start about 400 µs earlier; the rest of the read-out is unchanged.*
 
 ---
 
@@ -354,35 +368,20 @@ Nothing in this method is specific to Engram. Any step that is integer-heavy, da
 | argsort | 6.6x to 40x |
 | BM25 scoring | 15x to 27x |
 | scatter-add with duplicate indices | 4.45x |
-| MoE dispatch metadata | 2.25x to 5x |
-| MoE token permutation | 1.42x |
-
-However, a GPSIMD operator is not always the best choice. For the expert-parallel MoE dispatch of Qwen3-235B at decode size (router, token permutation and all-to-all metadata), our GPSIMD version (39.3 µs) was 4.95x faster than the NKI Library version (194.7 µs), but a hand-optimized NKI version (37.0 µs) was faster still. In DeepSeek-V4.1-Flash, we also found no gain for three other candidates: deduplicating the key fetches of prefill sparse attention (the dedup needs data-dependent sizes, and NKI pays for skipped indices and run-time loops), MoE at decode (the time is weight streaming), and the mHC and DSpark computations (floating point). The lesson matches [1]: a disaggregated design pays off when each part goes to the hardware that suits the part. The best NKI implementation is the baseline that decides whether a GPSIMD operator is worth the call.
 
 ---
 
 ### Limitations
 
-**Engram is a small part of end-to-end inference.** We estimated the time of the Engram computation from the port's own profile of DeepSeek-V4.1-Flash on 64 logical NeuronCores [7] (`PROFILE_REPORT_tp64_opt10.md`, rank 0). The estimate is the difference between each Engram block and a block of the same kind without Engram (`r0_e` vs `r0`, `r2_src_idx_e` vs `r2_src_idx`):
+Currently, our toolchain supports only part of what the GPSIMD cores can do. The main gaps are listed below.
 
-| Phase | End-to-end time | Engram (estimated) | Share |
-|---|---:|---:|---:|
-| decode step, 1 sequence, 1k context | 28.6 ms | 0.87 ms | 3.0% |
-| decode step, 10 sequences, 1k context | 47.2 ms | 0.85 ms | 1.8% |
-| decode step, 1 sequence, 8k context | 29.5 ms | 0.90 ms | 3.0% |
-| decode step, 10 sequences, 8k context | 51.8 ms | 0.82 ms | 1.6% |
-| prefill (TTFT), 1 request × 1024 tokens | 246.8 ms | about 6.4 ms * | about 2.6% |
-| prefill (TTFT), 1 request × 8192 tokens | 1.69 s | about 46 ms * | about 2.7% |
+**No compiler support for vector instructions.** Each GPSIMD core has a 512-bit vector unit, and the unit is enabled while our operators run. However, the only Xtensa configuration in the Neuron SDK (`ncore2gp`) describes the Trainium 1 core. Trainium 3 encodes the vector instructions differently, so vector code generated by `xt-clang` hangs the core. The toolchain therefore compiles scalar base-ISA code only, and `gpsimd-cc` rejects any library that contains vector instructions. 
 
-\* In prefill, only the layer-14 block has a comparable block without Engram; the estimate counts the layer-14 difference twice.
+**No hardware floating point.** The floating-point instructions of `ncore2gp` also hang the core, and we have not found their Trainium 3 encodings. Floating point therefore runs in software (`gp::f32`): a float32 addition takes 117 cycles and a multiplication 97 cycles. Steps dominated by floating-point math still belong on the Vector and Scalar Engines.
 
-The n-gram hashing runs in the decode step prologue, which takes 0.12 ms to 0.49 ms of a step in total (0.4% to 0.9%). With Engram at 1.6% to 3.0% of the time, the GPSIMD speedups give only a small end-to-end gain. The deployment splits each Engram computation over the 2 physical cores of a logical NeuronCore. If this halves our single-core times, the two GPSIMD operators would save about 0.05 ms of a 47.2 ms decode step (about 0.1%) and about 0.4 ms of a 246.8 ms TTFT (about 0.2%; the port hashes prefill tokens on the host, so only the retrieval gain applies). The value of the case study is the method and the stage-level gains, not the end-to-end number for this model. Models or workloads with a larger memory-processing share, such as larger Engram tables or retrieval over many documents, would gain more from the same split.
+**Tile addresses fixed at build time.** We did not find a way for the operator to read the `KERNEL_CALL` operands at run time, so the SBUF addresses of the tiles are compiled into `ops.so`. The library must be rebuilt whenever the kernel is recompiled, and it must fit in 64 KB of code and about 7 KB of static data. Operators have no heap, no C library beyond the memory functions in the runtime, no static constructors, and no C++ exceptions or RTTI.
 
-**The read-out is limited by NKI work.** After the retrieval stage moves to GPSIMD, the gate on the Vector Engine (1.66 ms) and the fp8 GEMM (1.19 ms) make up most of the read-out. Both are dense floating-point work that belongs on the NKI side.
-
-**The GPSIMD cores are small.** The 8 cores run at 1.2 GHz without a usable floating-point unit, so a GPSIMD operator helps only with integer, control-heavy steps that touch little data. Each call costs about 2.6 µs, which rules out very small steps. The NKI consumers of a GPSIMD result still need static shapes. Variable-length results therefore need either a run-time loop (2.4 µs per iteration, and the loop breaks the overlap between engines) or a padded static schedule.
-
-**The toolchain is not a supported product.** We built the toolchain by reverse engineering Neuron SDK 2.33, and a new SDK version may break it. The current version supports one NeuronCore per NEFF (`LNC=1`) and requires every `gp.call` to come before the first dynamic loop. The host must program the SBUF and HBM address windows after loading the NEFF. Our runner does this, but `torch-neuronx` and vLLM do not, so the operators are not yet integrated into the serving stack of the port. All measurements run one Engram computation on one NeuronCore without the collectives.
+An official support on GPSIMD custom kernel should resolve these issues.
 
 ---
 
