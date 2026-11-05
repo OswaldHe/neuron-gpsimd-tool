@@ -74,6 +74,8 @@ PARAMS = {"T": T, "rank": RANK, "rows_per_rank": ROWW, "hash_cols": NCOL, "head_
 TILES = [(i * PT, min(PT, T - i * PT)) for i in range(NT)]
 DEBUG = bool(os.environ.get("DEBUG"))          # also return ekv (to check the GEMM on its own)
 STAGE = os.environ.get("STAGE", "readout")    # "gather": only build emb (the stage the GPSIMD call changes)
+PRIO = int(os.environ.get("PRIO", "-1"))      # trn3 DMA QoS class (0 = highest) of the GPSIMD version's retrieval DMAs
+QOS = {"priority": PRIO} if PRIO >= 0 else {}
 
 
 # ----------------------------------------------------------------------------- the shared part
@@ -89,11 +91,11 @@ def _project_and_gate(emb, e_wkv, e_wkv_s, e_qk, strm):
     return (out, ekv) if DEBUG else (out,)
 
 
-def _zero_emb(emb):
+def _zero_emb(emb, **qos):
     zero = nl.ndarray((PT, E_IN), dtype=nl.bfloat16, buffer=nl.sbuf)
     nisa.memset(dst=zero, value=0.0)
     for i in range(NT):
-        nisa.dma_copy(dst=emb[i * PT:(i + 1) * PT, :], src=zero)
+        nisa.dma_copy(dst=emb[i * PT:(i + 1) * PT, :], src=zero, **qos)
 
 
 @nki.jit
@@ -126,13 +128,13 @@ def gpsimd_kernel(hash_ids, etable, erow_start, e_wkv, e_wkv_s, e_qk, strm):
         src_t = nl.ndarray((PT, NCH), dtype=i32, buffer=nl.sbuf)
         dst_t = nl.ndarray((PT, NCH), dtype=i32, buffer=nl.sbuf)
         gp.call("engram_hits_t", ins=[ids_sb], outs=[src_t, dst_t])
-        _zero_emb(emb)
+        _zero_emb(emb, **QOS)
         for b in range(NCH):
             g = nl.ndarray((PT, HD), dtype=nl.bfloat16, buffer=nl.sbuf)
             nisa.dma_copy(dst=g, src=etable.ap(pattern=[[HD, PT], [1, HD]], offset=0, vector_offset=src_t[:, b:b + 1],
-                                               indirect_dim=0))
+                                               indirect_dim=0), **QOS)
             nisa.dma_copy(dst=rows.ap(pattern=[[HD, PT], [1, HD]], offset=0, vector_offset=dst_t[:, b:b + 1],
-                                      indirect_dim=0), src=g, oob_mode=oob_mode.skip)
+                                      indirect_dim=0), src=g, oob_mode=oob_mode.skip, **QOS)
         return (*_project_and_gate(emb, e_wkv, e_wkv_s, e_qk, strm), emb)
     hits_sb = nl.ndarray((2, CAP), dtype=i32, buffer=nl.sbuf)
     cnt_sb = nl.ndarray((1, 1), dtype=i32, buffer=nl.sbuf)

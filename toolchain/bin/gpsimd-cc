@@ -2,14 +2,15 @@
 """gpsimd-cc - build a trn3 GPSIMD operator library for the call sites of an NKI kernel.
 
   gpsimd-cc --sites <sites_resolved.json> -o <ops.so> <op.cpp|op.c> [...] [-DNAME=V] [-I dir] [-O2|-O3|-Os]
-            [--log-size BYTES] [--keep]
+            [--log-size BYTES] [--keep] [--allow-vector]
 
 Generates the call-site table (tile descriptors resolved by `gpsimd-neff analyze`) and one entry stub
 "<kernel>__s<site>" per call site, compiles the operator sources and the runtime (dispatch, receipts,
 log ring, barrier/reductions, soft-float, compiler helpers) with xt-clang for base-ISA Xtensa, links a
 position-independent kernel library (pisplitload layout, GNU build-id, "Neuron" kernel notes) and
 checks it: only base-ISA instructions (no FLIX/FPU/vector bundles), no unresolved symbols, no static
-constructors, fits the per-library budgets (64 KB code, 8 KB data).
+constructors, fits the per-library budgets (64 KB code, 8 KB data). --allow-vector skips the FLIX check, for
+operators that embed raw trn3 vector bundles (include/gpsimd/vec.h); the compiler itself still emits base ISA only.
 
 Environment: GPSIMD_TOOLS (default /opt/aws/neuron/gpsimd).
 """
@@ -29,6 +30,7 @@ IRAM_BUDGET, DRAM_BUDGET = 64 * 1024, 7 * 1024
 # -mno-serialize-volatile: no memw before every volatile access (stores to SBUF/HBM become posted, 19 instead
 # of ~300 cycles); the runtime issues memw where ordering matters (barrier, lock, iDMA, end of call).
 BASE_FLAGS = ["-fpic", "-mno-flix", "-mno-generate-flix", "-mno-coproc", "-mno-serialize-volatile", "-ffreestanding",
+              "-mno-target-align",     # no alignment padding: the compiler pads with ncore2gp FLIX nops, which trn3 decodes differently
               "-fno-builtin", "-fno-jump-tables", "-Wall", "-Werror", "-Wno-unused-function"]
 CXX_FLAGS = ["-std=c++17", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics", "-fno-use-cxa-atexit"]
 
@@ -102,7 +104,7 @@ def gen_sites(resolved, path):
     open(path, "w").write("\n".join(lines) + "\n")
 
 
-def elf_check(so, env):
+def elf_check(so, env, allow_vector=False):
     elf = open(so, "rb").read()
     shoff, = struct.unpack_from("<I", elf, 0x20)
     shentsize, shnum, shstrndx = struct.unpack_from("<HHH", elf, 0x2e)
@@ -128,7 +130,11 @@ def elf_check(so, env):
         die(f"{so}: unresolved symbols {und} (no libc/libgcc/heap on the GPSIMD; implement them or avoid the construct)")
     dis = run(["xt-objdump", "-d", so], env)
     flix = [l for l in dis.splitlines() if re.match(r"^\s+[0-9a-f]+:\s+[0-9a-f]{16,}\s", l)]
-    if flix:
+    pad = [l for l in flix if re.search(r"\{\s*nop(;\s*nop)*\s*\}", l)]
+    if pad:
+        die(f"{so}: the compiler inserted {len(pad)} FLIX nop bundle(s) (trn1 encoding; trn3 decodes them differently):\n  "
+            f"{pad[0].strip()}")
+    if flix and not allow_vector:
         fp = [l for l in flix if re.search(r"\.s\b|\.d\b|float|trunc|ufloat|madd|msub", l)]
         hint = ("native float/double arithmetic (use gp::f32 / sf_* soft-float)" if fp else
                 "FLIX/vector bundles (intrinsics or auto-generated wide instructions)")
@@ -139,7 +145,7 @@ def elf_check(so, env):
 
 def main():
     a = sys.argv[1:]
-    sites_json, out, srcs, cflags, opt, log_size, keep = None, None, [], [], "-O2", 1024, False
+    sites_json, out, srcs, cflags, opt, log_size, keep, allow_vector = None, None, [], [], "-O2", 1024, False, False
     i = 0
     while i < len(a):
         x = a[i]
@@ -151,6 +157,8 @@ def main():
             log_size = int(a[i + 1]); i += 2; continue
         if x == "--keep":
             keep = True; i += 1; continue
+        if x == "--allow-vector":
+            allow_vector = True; i += 1; continue
         if x in ("-O0", "-O1", "-O2", "-O3", "-Os"):
             opt = x; i += 1; continue
         if x == "-I":
@@ -185,7 +193,7 @@ def main():
     nm = os.path.join(work, "ops.nm")
     open(nm, "w").write(run(["xt-nm", out], env))
     notes = run([sys.executable, "-I", os.path.join(HERE, "klpatch.py"), out, nm], env)
-    text, data = elf_check(out, env)
+    text, data = elf_check(out, env, allow_vector)
     n_entry = notes.count("entry =")
     if n_entry != len(resolved["sites"]):
         die(f"expected {len(resolved['sites'])} kernel notes, patched {n_entry}")

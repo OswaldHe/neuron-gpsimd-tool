@@ -257,10 +257,10 @@ The cores reach SBUF and HBM through address-translation windows. `gpsimd-run` (
 
 ### Accelerating Engram in DeepSeek-V4.1-Flash with the GPSIMD Engine
 
-In this case study, we accelerate the Engram computation of the DeepSeek-V4.1-Flash port for Trainium 3 [7] with two GPSIMD operators. Figure 8 shows how one Engram layer is split between the GPSIMD cores and NKI on one NeuronCore. Compared with the GPU-FPGA split of Figure 3, the cut is finer: the GPSIMD cores take only the integer steps, which are the n-gram hashing and the hit compaction of the table retrieval. The gathers, the gate and the projection GEMM stay in NKI.
+In this case study, we accelerate the Engram computation of the DeepSeek-V4.1-Flash port for Trainium 3 [7] with two GPSIMD operators. Figure 8 shows how one Engram layer is split between the GPSIMD cores and NKI on one NeuronCore. Compared with the GPU-FPGA split of Figure 3, the cut is finer: the GPSIMD cores take only the two integer steps. The first is the n-gram hashing. The second builds the *gather list* of the table retrieval. Each rank holds one shard of the table, and only about 1.5% of the lookups read a row of this shard. The GPSIMD operator lists these lookups, and NKI gathers only the listed rows. The gathers, the gate and the projection GEMM stay in NKI.
 
 ![Figure 8: Engram on the memory processing pipeline](figs/fig08_engram_split.png)
-*Figure 8. The Engram computation of one layer in the four-step memory processing pipeline of [1], split between GPSIMD custom operators and NKI.*
+*Figure 8. The Engram computation of one layer in the four-step memory processing pipeline of [1], split between the GPSIMD engine and the other engines. The colors show where each step runs or where its data is stored, and ★ marks our two custom operators. The gather is NKI code, but the GPSIMD engine issues its indirect DMAs.*
 
 The baseline is the hand-optimized NKI code of the port (branch `deepseek_v41_trn3`, commit `3b74533`). The port splits each Engram table by row over 64 ranks (6.0M rows, 3.1 GB per rank). Each rank reads only the rows it holds into `emb` and leaves the other rows zero, and an all-reduce over the 64 ranks then completes `emb`. For a fair comparison, each experiment copies the port's NKI helper modules without changes, runs the whole Engram computation on one NeuronCore, and changes only the part named in each section. The table shard has the deployed size (6,000,097 rows, 3.1 GB) with random values, and the row ids follow the hash distribution of the model. The collectives are not run. Latency is the median `total_exec_time` of 5 profiled executions in Neuron Explorer [6]. Every output of the GPSIMD version is checked against a numpy reference and against the NKI version: the n-gram ids equal an exact Python-integer reference, `emb` is exact, and the read-out output is bit-identical to the output of the port.
 
@@ -299,14 +299,14 @@ The gain is smaller on full prefill tiles: 531.1 µs to 449.7 µs (1.18x) at T =
 
 #### Table Retrieval
 
-Each hash column j covers its own range of about 16M global rows, and rank r holds 6.0M consecutive rows. A rank's shard therefore overlaps at most 2 of the 24 columns of a layer, and only about 0.375 of a token's 24 lookups (1.5%) hit the rank. In our prefill chunk of T = 1024 tokens, rank 21 holds 372 of the 24,576 rows.
+Each hash column j covers its own range of about 16M global rows, and rank r holds 6.0M consecutive rows. A rank's shard therefore overlaps at most 2 of the 24 columns of a layer, and only about 0.375 of a token's 24 lookups (1.5%) read a row that the rank holds. We call these lookups *hits*. In our prefill chunk of T = 1024 tokens, rank 21 holds 372 of the 24,576 rows.
 
 The port's `engram_gather` cannot know in advance which ids hit, because NKI needs static shapes. The port therefore computes a mask for every id, issues one indirect DMA of 128 rows per 128-token tile and hash column (192 DMAs at T = 1024), and multiplies the result by the mask (Figure 10, left). Every index of an indirect DMA costs about 5.5 ns of descriptor generation on the GPSIMD Engine, even when the index is marked out of bounds and skipped: in a separate test, 64 gathers of 640 rows took 224 µs whether 100%, 25% or 0% of the indices were valid. The 98.5% of indices that miss therefore cost as much as the hits.
 
-![Figure 10: masked gather vs compacted gather](figs/fig10_gather.png)
+![Figure 10: masked gather vs gather list](figs/fig10_gather.png)
 *Figure 10. The ids of 16 tokens of one Engram layer on rank 21; only hash columns 7 and 8 overlap the rank's rows. Left: the NKI port fetches every row and masks the misses. Right: a GPSIMD operator lists the hits, and NKI fetches only those rows. The totals below the grids are for T = 1024.*
 
-The GPSIMD version lists the hits first and fetches only those rows (Figure 10, right). One operator, `engram_hits`, replaces the gather loop, and one short NKI loop fetches the hits:
+The GPSIMD version builds a gather list of the hits first and fetches only those rows (Figure 10, right). One operator, `engram_hits`, replaces the gather loop. Each core checks the ids in its 16 partitions and writes every hit as a pair: the row to read from the shard and the row of `emb` to write. An exclusive prefix sum over the per-core counts gives each core its offset, so the pairs of the 8 cores form one contiguous gather list. Core 0 pads the list to a multiple of 128 and writes the number of 128-pair chunks. One short NKI loop then fetches the hits, with one gather and one scatter per chunk:
 
 ```cpp
 // GPSIMD: each core scans its 16 partitions (all tiles, all 24 columns) after one iDMA fetch
@@ -326,7 +326,7 @@ reg = nisa.register_alloc(); nisa.register_load(reg, cnt_sb)
 nl.fori_loop(0, reg, chunk, step=1)     # chunk(b): load 128 (table row, emb row) pairs, gather, scatter
 ```
 
-At T = 1024, the operator takes 36 µs, and NKI then needs 6 indirect DMAs (3 gathers and 3 scatters) instead of 192 gathers. The retrieval stage drops from 506.9 µs to 102.4 µs (4.95x), and from 980.5 µs to 200.7 µs (4.89x) at T = 2048. Figure 11 shows the two profiles. In the NKI version, the GPSIMD Engine is busy with descriptor generation and the Vector Engine with mask arithmetic for the whole stage. In the GPSIMD version, one 36 µs operator call and 6 DMAs replace this work.
+At T = 1024, the operator takes 36 µs. The 372 hits fill 3 chunks, so NKI then needs 6 indirect DMAs (3 gathers and 3 scatters) instead of 192 gathers. The retrieval stage drops from 506.9 µs to 102.4 µs (4.95x), and from 980.5 µs to 200.7 µs (4.89x) at T = 2048. Figure 11 shows the two profiles. In the NKI version, the GPSIMD Engine is busy with descriptor generation and the Vector Engine with mask arithmetic for the whole stage. In the GPSIMD version, one 36 µs operator call and 6 DMAs replace this work.
 
 ![Figure 11: retrieval timelines](figs/fig11_timeline_gather.png)
 *Figure 11. One profiled execution of the retrieval stage (T = 1024). Top: 192 indirect DMAs and their masks. Bottom: the `engram_hits` operator (orange, 36 µs), then 3 gathers and 3 scatters of hit rows.*
@@ -342,13 +342,13 @@ The table below lists all results. The read-out is one Engram layer: table retri
 | n-gram hashing | decode, 10 sequences (T = 60) | 86.95 µs | 48.45 µs | **1.79x** | 64-bit products, XOR, modulo | n-gram window gathers |
 | | prefill chunk, T = 1024 | 531.1 µs | 449.7 µs | 1.18x | | |
 | | prefill chunk, T = 2048 | 1055.6 µs | 890.6 µs | 1.19x | | |
-| retrieval stage | decode (T = 60) | 62.1 µs | 24.7 µs | **2.51x** | hit compaction | zero-fill, gather and scatter of hits |
+| retrieval stage | decode (T = 60) | 62.1 µs | 24.7 µs | **2.51x** | gather list | zero-fill, gather and scatter of hits |
 | | prefill chunk, T = 1024 | 506.9 µs | 102.4 µs | **4.95x** | | |
 | | prefill chunk, T = 2048 | 980.5 µs | 200.7 µs | **4.89x** | | |
-| whole read-out | decode (T = 60) | 697.1 µs | 681.0 µs | 1.02x | hit compaction | retrieval DMAs, fp8 GEMM, gate |
+| whole read-out | decode (T = 60) | 697.1 µs | 681.0 µs | 1.02x | gather list | retrieval DMAs, fp8 GEMM, gate |
 | | prefill chunk, T = 1024 | 3362.9 µs | 2968.9 µs | **1.13x** | | |
 | | prefill chunk, T = 2048 | 6766.4 µs | 5926.4 µs | **1.14x** | | |
-| whole Engram (hashing + 2 × read-out) | decode (T = 60) | 1481.2 µs | 1410.5 µs | **1.05x** | hashing, hit compaction | window gathers, retrieval DMAs, fp8 GEMM, gate |
+| whole Engram (hashing + 2 × read-out) | decode (T = 60) | 1481.2 µs | 1410.5 µs | **1.05x** | hashing, gather list | window gathers, retrieval DMAs, fp8 GEMM, gate |
 | | prefill chunk, T = 1024 | 7256.9 µs | 6387.5 µs | **1.14x** | | |
 | | prefill chunk, T = 2048 | 14588.4 µs | 12743.4 µs | **1.14x** | | |
 

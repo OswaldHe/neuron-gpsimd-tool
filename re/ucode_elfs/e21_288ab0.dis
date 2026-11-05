@@ -1,0 +1,485 @@
+00000000 <_binary_e21_288ab0_text_bin_start>:
+0:	004136                                                                       	entry	a1, 32
+3:	03eb30                                                                       	rsr.prid	a3
+6:	4f                                                                                              	.byte 0x4f
+7:	015a00                                                                       	slli	a5, a10, 32
+a:	3248                                                                            	l32i.n	a4, a2, 12
+c:	4042c2                                                                       	s8i	a12, a2, 64
+f:	8f4654                                                                       	const16	a5, 0x8f46
+12:	0362e0                                                                       	rsr.cacheadrdis	a14
+15:	0040d0                                                                       	break	0, 13
+18:	146000                                                                       	extui	a6, a0, 0, 2
+1b:	ef                                                                                              	.byte 0xef
+1c:	31c3f0                                                                       	srai	a12, a15, 19
+1f:	2e3186                                                                       	j	b8e9 <_binary_e21_288ab0_text_bin_end+0xb42c>
+22:	43                                                                                              	.byte 0x43
+23:	df                                                                                              	.byte 0xdf
+24:	076381                                                                       	l32r	a8, fffc1db0 <_binary_e21_288ab0_text_bin_end+0xfffc18f3>
+27:	002000                                                                       	isync
+2a:	144000                                                                       	extui	a4, a0, 0, 2
+2d:	40                                                                                              	.byte 0x40
+2e:	e0c650                                                                       	subx4	a12, a6, a5
+31:	8f4154                                                                       	const16	a5, 0x8f41
+34:	036220                                                                       	rsr.cacheadrdis	a2
+37:	0040c0                                                                       	break	0, 12
+3a:	146000                                                                       	extui	a6, a0, 0, 2
+3d:	0f                                                                                              	.byte 0xf
+3e:	0364a4                                                                       	const16	a10, 0x364
+41:	00a084                                                                       	const16	a8, 160
+44:	140200                                                                       	extui	a0, a0, 2, 2
+47:	8f                                                                                              	.byte 0x8f
+48:	076236                                                                       	entry	a2, 0x3b0
+4b:	40                                                                                              	.byte 0x40
+4c:	000000                                                                       	ill
+4f:	501460                                                                       	wbtb1	a6, a4
+52:	15                                                                                              	.byte 0x15
+53:	f3                                                                                              	.byte 0xf3
+54:	40                                                                                              	.byte 0x40
+55:	f0f314                                                                       	const16	a1, 0xf0f3
+58:	13                                                                                              	.byte 0x13
+59:	f3                                                                                              	.byte 0xf3
+5a:	00                                                                                              	.byte 00
+5b:	000604                                                                       	const16	a0, 6
+5e:	0608                                                                            	l32i.n	a0, a6, 0
+60:	2f                                                                                              	.byte 0x2f
+61:	826736                                                                       	entry	a7, 0x4130
+64:	01e161                                                                       	l32r	a6, fffc07e8 <_binary_e21_288ab0_text_bin_end+0xfffc032b>
+67:	418006                                                                       	j	1066b <_binary_e21_288ab0_text_bin_end+0x101ae>
+6a:	d748                                                                            	l32i.n	a4, a7, 52
+6c:	01c600                                                                       	slli	a12, a6, 32
+6f:	440f41                                                                       	l32r	a4, fffd10ac <_binary_e21_288ab0_text_bin_end+0xfffd0bef>
+72:	304322                                                                       	s8i	a2, a3, 48
+75:	6f10c1783852a10348580f11233c888e                                  	{ ball.w15	a8, a8, ffffdffb <_binary_e21_288ab0_text_bin_end+0xffffdb3e>; ivp_lvnx8s_i	v18, a12, 0x260; ivp_mul4tn16xr16	wv0, v7, v1, pr4; ivp_mov2nx8t	v0, v5, v17, vb12; ivp_bmin2nx8	vb2, v1, v20, v19 }
+85:	21f704                                                                       	const16	a0, 0x21f7
+88:	550717                                                                       	bnone	a7, a1, e1 <_binary_e21_288ab0_text_bin_start+0xe1>
+8b:	43                                                                                              	.byte 0x43
+8c:	0009118700bf1400000000900320b80f                                  	{ bnall.w15	a8, a0, ffffe480 <_binary_e21_288ab0_text_bin_end+0xffffdfc3>; ivp_labvdcmprs2nx8_xp	vb0, v0, u0, a0, a2, 2; ivp_sel2nx8i_s2	v0, v16, v0, 1; ivp_countlem4nx8	v2, a2, v0, v16, vb8, vb3 }
+9c:	bf4356                                                                       	bnez	a3, fffffc94 <_binary_e21_288ab0_text_bin_end+0xfffff7d7>
+9f:	40                                                                                              	.byte 0x40
+a0:	8179a7                                                                       	bbci	a9, 26, 25 <_binary_e21_288ab0_text_bin_start+0x25>
+a3:	435600                                                                       	min	a5, a6, a0
+a6:	0f                                                                                              	.byte 0xf
+a7:	432ce4                                                                       	const16	a14, 0x432c
+aa:	d0                                                                                              	.byte 0xd0
+ab:	686a                                                                            	add.n	a6, a8, a6
+ad:	222c                                                                            	movi.n	a2, 34
+af:	cc8011                                                                       	l32r	a1, ffff32b0 <_binary_e21_288ab0_text_bin_end+0xffff2df3>
+b2:	23                                                                                              	.byte 0x23
+b3:	23dd80                                                                       	sext	a13, a13, 15
+b6:	8f                                                                                              	.byte 0x8f
+b7:	ec0bb6                                                                       	bltui	a11, 0x8000, a7 <_binary_e21_288ab0_text_bin_start+0xa7>
+ba:	e168                                                                            	l32i.n	a6, a1, 56
+bc:	00                                                                                              	.byte 00
+bd:	c00da6                                                                       	blti	a13, -1, 81 <_binary_e21_288ab0_text_bin_start+0x81>
+c0:	43                                                                                              	.byte 0x43
+c1:	d34357                                                                       	ball	a3, a5, 98 <_binary_e21_288ab0_text_bin_start+0x98>
+c4:	7f4101                                                                       	l32r	a0, fffdfdc8 <_binary_e21_288ab0_text_bin_end+0xfffdf90b>
+c7:	829770                                                                       	mull	a9, a7, a7
+ca:	c23e11                                                                       	l32r	a1, ffff09c4 <_binary_e21_288ab0_text_bin_end+0xffff0507>
+cd:	009b                                                                            	addi.n	a0, a0, 9
+cf:	52a817                                                                       	bge	a8, a1, 125 <_binary_e21_288ab0_text_bin_start+0x125>
+d2:	025642                                                                       	s16i	a4, a6, 4
+d5:	fe8f41                                                                       	l32r	a4, fffffb14 <_binary_e21_288ab0_text_bin_end+0xfffff657>
+d8:	5541b7                                                                       	ball	a1, a11, 131 <_binary_e21_288ab0_text_bin_start+0x131>
+db:	563a                                                                            	add.n	a5, a6, a3
+dd:	43                                                                                              	.byte 0x43
+de:	2f                                                                                              	.byte 0x2f
+df:	cac745                                                                       	call0	fffcad54 <_binary_e21_288ab0_text_bin_end+0xfffca897>
+e2:	028161                                                                       	l32r	a6, fffc0ae8 <_binary_e21_288ab0_text_bin_end+0xfffc062b>
+e5:	41bc86                                                                       	j	107db <_binary_e21_288ab0_text_bin_end+0x1031e>
+e8:	a709                                                                            	s32i.n	a0, a7, 40
+ea:	01c644                                                                       	const16	a4, 0x1c6
+ed:	253f41                                                                       	l32r	a4, fffc95ec <_binary_e21_288ab0_text_bin_end+0xfffc912f>
+f0:	2951d7                                                                       	bbc	a1, a13, 11d <_binary_e21_288ab0_text_bin_start+0x11d>
+f3:	563a                                                                            	add.n	a5, a6, a3
+f5:	43                                                                                              	.byte 0x43
+f6:	3f                                                                                              	.byte 0x3f
+f7:	91d825                                                                       	call8	fff91e78 <_binary_e21_288ab0_text_bin_end+0xfff919bb>
+fa:	3a28                                                                            	l32i.n	a2, a10, 12
+fc:	1f4352                                                                       	s8i	a5, a3, 31
+ff:	f709                                                                            	s32i.n	a0, a7, 60
+101:	51da                                                                            	add.n	a5, a1, a13
+103:	e02c                                                                            	movi.n	a0, 46
+105:	085b                                                                            	addi.n	a0, a8, 5
+107:	708235                                                                       	addi.a	a8, a2, 112
+10a:	266b                                                                            	addi.n	a2, a6, 6
+10c:	004105                                                                       	call0	520 <_binary_e21_288ab0_text_bin_end+0x63>
+10f:	44ff00                                                                       	extui	a15, a0, 15, 5
+112:	ad19                                                                            	s32i.n	a1, a13, 40
+114:	5f                                                                                              	.byte 0x5f
+115:	8d                                                                                              	.byte 0x8d
+116:	316c                                                                            	movi.n	a1, -29
+118:	308416                                                                       	beqz	a4, 424 <_binary_e21_288ab0_text_bin_start+0x424>
+11b:	6f                                                                                              	.byte 0x6f
+11c:	03                                                                                              	.byte 0x3
+11d:	c3                                                                                              	.byte 0xc3
+11e:	2d21c4                                                                       	const16	a12, 0x2d21
+121:	ce                                                                                              	.byte 0xce
+122:	570094                                                                       	const16	a9, 0x5700
+125:	6d                                                                                              	.byte 0x6d
+126:	52                                                                                              	.byte 0x52
+127:	3f                                                                                              	.byte 0x3f
+128:	410256                                                                       	bnez	a2, 53c <_binary_e21_288ab0_text_bin_end+0x7f>
+12b:	000306                                                                       	j	13b <_binary_e21_288ab0_text_bin_start+0x13b>
+12e:	00                                                                                              	.byte 00
+12f:	00                                                                                              	.byte 00
+130:	ff                                                                                              	.byte 0xff
+131:	5b88                                                                            	l32i.n	a8, a11, 20
+133:	ad                                                                                              	.byte 0xad
+134:	6c8d57                                                                       	bany	a13, a5, 1a4 <_binary_e21_288ab0_text_bin_start+0x1a4>
+137:	481631                                                                       	l32r	a3, fffd2190 <_binary_e21_288ab0_text_bin_end+0xfffd1cd3>
+13a:	fd                                                                                              	.byte 0xfd
+13b:	6f                                                                                              	.byte 0x6f
+13c:	ccc202                                                                       	addi	a0, a2, -52
+13f:	ce2e31                                                                       	l32r	a3, ffff39f8 <_binary_e21_288ab0_text_bin_end+0xffff353b>
+142:	570094                                                                       	const16	a9, 0x5700
+145:	6d                                                                                              	.byte 0x6d
+146:	52                                                                                              	.byte 0x52
+147:	3f                                                                                              	.byte 0x3f
+148:	410256                                                                       	bnez	a2, 55c <_binary_e21_288ab0_text_bin_end+0x9f>
+14b:	000906                                                                       	j	173 <_binary_e21_288ab0_text_bin_start+0x173>
+14e:	00                                                                                              	.byte 00
+14f:	226f00                                                                       	orb	b6, b15, b0
+152:	022d40                                                                       	andb	b2, b13, b4
+155:	062d40226f3250b000e184452f4112ee                                  	{ bbci.w15	a2, 30, 1eab <_binary_e21_288ab0_text_bin_end+0x19ee>; extui	a0, a4, 1, 3; ivp_muluupan16xr16	wv2, v2, v24, pr2; ivp_sel2nx8i	v12, v4, v4, 57; ivp_babssubnx16	vb14, v9, v3, v7 }
+165:	ee                                                                                              	.byte 0xee
+166:	ff4112                                                                       	s8i	a1, a1, 255
+169:	9d99                                                                            	s32i.n	a9, a13, 36
+16b:	ad                                                                                              	.byte 0xad
+16c:	4f                                                                                              	.byte 0x4f
+16d:	8d                                                                                              	.byte 0x8d
+16e:	316c                                                                            	movi.n	a1, -29
+170:	fbc916                                                                       	beqz	a9, 130 <_binary_e21_288ab0_text_bin_start+0x130>
+173:	1f                                                                                              	.byte 0x1f
+174:	d2e625                                                                       	call8	fffd2fd8 <_binary_e21_288ab0_text_bin_end+0xfffd2b1b>
+177:	1f                                                                                              	.byte 0x1f
+178:	ce                                                                                              	.byte 0xce
+179:	84ea45                                                                       	call0	fff85020 <_binary_e21_288ab0_text_bin_end+0xfff84b63>
+17c:	436be4                                                                       	const16	a14, 0x436b
+17f:	fa0440                                                                       	depbits	a4, a4, 15, 1
+182:	6f2c                                                                            	movi.n	a15, 38
+184:	d2e605                                                                       	call0	fffd2fe8 <_binary_e21_288ab0_text_bin_end+0xfffd2b2b>
+187:	1f                                                                                              	.byte 0x1f
+188:	8e                                                                                              	.byte 0x8e
+189:	8eca44                                                                       	const16	a4, 0x8eca
+18c:	836de4                                                                       	const16	a14, 0x836d
+18f:	f9c440                                                                       	addx8.a	a12, a4, a4
+192:	662c                                                                            	movi.n	a6, 38
+194:	15                                                                                              	.byte 0x15
+195:	066fd1                                                                       	l32r	a13, fffc1b54 <_binary_e21_288ab0_text_bin_end+0xfffc1697>
+198:	b008b4                                                                       	const16	a11, 0xb008
+19b:	7a0145                                                                       	call0	7a1b0 <_binary_e21_288ab0_text_bin_end+0x79cf3>
+19e:	e01764                                                                       	const16	a6, 0xe017
+1a1:	462082                                                                       	l32i	a8, a0, 0x118
+1a4:	af4102                                                                       	s8i	a0, a1, 175
+1a7:	a59c22                                                                       	l16si	a2, a12, 0x14a
+1aa:	0f                                                                                              	.byte 0xf
+1ab:	8d                                                                                              	.byte 0x8d
+1ac:	60                                                                                              	.byte 0x60
+1ad:	32af32                                                                       	movi	a3, -206
+1b0:	06e184                                                                       	const16	a8, 0x6e1
+1b3:	3260b0                                                                       	orbc	b6, b0, b11
+1b6:	4f                                                                                              	.byte 0x4f
+1b7:	041426                                                                       	beqi	a4, 1, 1bf <_binary_e21_288ab0_text_bin_start+0x1bf>
+1ba:	831a                                                                            	add.n	a8, a3, a1
+1bc:	20                                                                                              	.byte 0x20
+1bd:	8648                                                                            	l32i.n	a4, a6, 32
+1bf:	030ce4                                                                       	const16	a14, 0x30c
+1c2:	40                                                                                              	.byte 0x40
+1c3:	bdcb                                                                            	addi.n	a11, a13, 12
+1c5:	2e                                                                                              	.byte 0x2e
+1c6:	0040a5303c802acf                                                    	{ beq.w15	a10, a12, 2ad0 <_binary_e21_288ab0_text_bin_end+0x2613>; ivp_lv2nx8_i	v19, a0, 0x200 }
+1ce:	3944c7                                                                       	ball	a4, a12, 20b <_binary_e21_288ab0_text_bin_start+0x20b>
+1d1:	d3                                                                                              	.byte 0xd3
+1d2:	fa8b80                                                                       	depbits	a8, a11, 15, 9
+1d5:	9e28                                                                            	l32i.n	a2, a14, 36
+1d7:	b9fa52                                                                       	s32ri	a5, a10, 0x2e4
+1da:	8708                                                                            	l32i.n	a0, a7, 32
+1dc:	20                                                                                              	.byte 0x20
+1dd:	008646                                                                       	j	3fa <_binary_e21_288ab0_text_bin_start+0x3fa>
+1e0:	3f                                                                                              	.byte 0x3f
+1e1:	03                                                                                              	.byte 0x3
+1e2:	1f                                                                                              	.byte 0x1f
+1e3:	b9aa                                                                            	add.n	a11, a9, a10
+1e5:	729ea1                                                                       	l32r	a10, fffdcc60 <_binary_e21_288ab0_text_bin_end+0xfffdc7a3>
+1e8:	b9fa                                                                            	add.n	a11, a9, a15
+1ea:	8718                                                                            	l32i.n	a1, a7, 32
+1ec:	a5c620                                                                       	extui	a12, a2, 22, 11
+1ef:	02be04                                                                       	const16	a0, 0x2be
+1f2:	1f                                                                                              	.byte 0x1f
+1f3:	b9aa                                                                            	add.n	a11, a9, a10
+1f5:	655fa1                                                                       	l32r	a10, fffd9774 <_binary_e21_288ab0_text_bin_end+0xfffd92b7>
+1f8:	e1f8a2                                                                       	s32ri	a10, a8, 0x384
+1fb:	ee0202                                                                       	l8ui	a0, a2, 238
+1fe:	c7c021                                                                       	l32r	a2, ffff2100 <_binary_e21_288ab0_text_bin_end+0xffff1c43>
+201:	73                                                                                              	.byte 0x73
+202:	43                                                                                              	.byte 0x43
+203:	062d40226f3260b106e1fe56af41023e                                  	{ bbci.w15	a2, 3, 1f99 <_binary_e21_288ab0_text_bin_end+0x1adc>; extui	a0, a4, 17, 1; ivp_muluupan16xr16	wv3, v31, v24, pr2; ivp_sel2nx8i	v14, v7, v5, 57; ivp_babssubnx16	vb14, v9, v3, v15 }
+213:	ee                                                                                              	.byte 0xee
+214:	6f4112                                                                       	s8i	a1, a1, 111
+217:	2d4032                                                                       	s8i	a3, a0, 45
+21a:	12ee06                                                                       	j	4dd6 <_binary_e21_288ab0_text_bin_end+0x4919>
+21d:	076f41                                                                       	l32r	a4, fffc1fdc <_binary_e21_288ab0_text_bin_end+0xfffc1b1f>
+220:	6008b4                                                                       	const16	a11, 0x6008
+223:	660181                                                                       	l32r	a8, fffd9a28 <_binary_e21_288ab0_text_bin_end+0xfffd956b>
+226:	184164                                                                       	const16	a6, 0x1841
+229:	c63fd7                                                                       	bltu	a15, a13, 1f3 <_binary_e21_288ab0_text_bin_start+0x1f3>
+22c:	864101                                                                       	l32r	a0, fffe1b30 <_binary_e21_288ab0_text_bin_end+0xfffe1673>
+22f:	00ffc7                                                                       	bbsi	a15, 28, 233 <_binary_e21_288ab0_text_bin_start+0x233>
+232:	00                                                                                              	.byte 00
+233:	250f00                                                                       	extui	a0, a0, 31, 3
+236:	422904                                                                       	const16	a0, 0x4229
+239:	435902                                                                       	s16i	a0, a9, 134
+23c:	5f                                                                                              	.byte 0x5f
+23d:	08b435                                                                       	addi.a	a11, a4, 8
+240:	0125b0                                                                       	slli	a2, a5, 21
+243:	e45a                                                                            	add.n	a14, a4, a5
+245:	d2a316                                                                       	beqz	a3, ffffff73 <_binary_e21_288ab0_text_bin_end+0xfffffab6>
+248:	3f                                                                                              	.byte 0x3f
+249:	32af32608d0fa59c22af07761641022e                                  	{ bgeui.w15	a2, 0x8000, 1b23 <_binary_e21_288ab0_text_bin_end+0x1666>; xor	a1, a1, a4; ivp_mulnx16j	wv1, v3, v14; ivp_sel2nx8i	v24, v27, v23, 20; ivp_baddnormnx16	vb9, v7, v18, v12 }
+259:	06e184                                                                       	const16	a8, 0x6e1
+25c:	3260b0                                                                       	orbc	b6, b0, b11
+25f:	4f                                                                                              	.byte 0x4f
+260:	001426                                                                       	beqi	a4, 1, 264 <_binary_e21_288ab0_text_bin_start+0x264>
+263:	c31a                                                                            	add.n	a12, a3, a1
+265:	84c820                                                                       	extui	a12, a2, 8, 9
+268:	0b0ce4                                                                       	const16	a14, 0xb0c
+26b:	40                                                                                              	.byte 0x40
+26c:	be0b                                                                            	addi.n	a11, a14, -1
+26e:	2e                                                                                              	.byte 0x2e
+26f:	0040a5303c802acf                                                    	{ beq.w15	a10, a12, 2b79 <_binary_e21_288ab0_text_bin_end+0x26bc>; ivp_lv2nx8_i	v19, a0, 0x200 }
+277:	3944c7                                                                       	ball	a4, a12, 2b4 <_binary_e21_288ab0_text_bin_start+0x2b4>
+27a:	d3                                                                                              	.byte 0xd3
+27b:	fa8b80                                                                       	depbits	a8, a11, 15, 9
+27e:	9e28                                                                            	l32i.n	a2, a14, 36
+280:	b9fa52                                                                       	s32ri	a5, a10, 0x2e4
+283:	c708                                                                            	l32i.n	a0, a7, 48
+285:	844620                                                                       	extui	a4, a2, 6, 9
+288:	00                                                                                              	.byte 00
+289:	3f                                                                                              	.byte 0x3f
+28a:	03                                                                                              	.byte 0x3
+28b:	1f                                                                                              	.byte 0x1f
+28c:	c1aa                                                                            	add.n	a12, a1, a10
+28e:	729ea1                                                                       	l32r	a10, fffdcd08 <_binary_e21_288ab0_text_bin_end+0xfffdc84b>
+291:	b9fa                                                                            	add.n	a11, a9, a15
+293:	a718                                                                            	l32i.n	a1, a7, 40
+295:	a4c620                                                                       	extui	a12, a2, 6, 11
+298:	02be04                                                                       	const16	a0, 0x2be
+29b:	1f                                                                                              	.byte 0x1f
+29c:	c1aa                                                                            	add.n	a12, a1, a10
+29e:	655fa1                                                                       	l32r	a10, fffd981c <_binary_e21_288ab0_text_bin_end+0xfffd935f>
+2a1:	e1f8a2                                                                       	s32ri	a10, a8, 0x384
+2a4:	ee0202                                                                       	l8ui	a0, a2, 238
+2a7:	c7c021                                                                       	l32r	a2, ffff21a8 <_binary_e21_288ab0_text_bin_end+0xffff1ceb>
+2aa:	73                                                                                              	.byte 0x73
+2ab:	43                                                                                              	.byte 0x43
+2ac:	062d40226f3260b106e1fe56af41023e                                  	{ bbci.w15	a2, 3, 2042 <_binary_e21_288ab0_text_bin_end+0x1b85>; extui	a0, a4, 17, 1; ivp_muluupan16xr16	wv3, v31, v24, pr2; ivp_sel2nx8i	v14, v7, v5, 57; ivp_babssubnx16	vb14, v9, v3, v15 }
+2bc:	ee                                                                                              	.byte 0xee
+2bd:	6f4112                                                                       	s8i	a1, a1, 111
+2c0:	2d4032                                                                       	s8i	a3, a0, 45
+2c3:	12ee06                                                                       	j	4e7f <_binary_e21_288ab0_text_bin_end+0x49c2>
+2c6:	076f41                                                                       	l32r	a4, fffc2084 <_binary_e21_288ab0_text_bin_end+0xfffc1bc7>
+2c9:	600cb4                                                                       	const16	a11, 0x600c
+2cc:	660301                                                                       	l32r	a0, fffd9ad8 <_binary_e21_288ab0_text_bin_end+0xfffd961b>
+2cf:	4640e4                                                                       	const16	a14, 0x4640
+2d2:	ae3fc7                                                                       	bltu	a15, a12, 284 <_binary_e21_288ab0_text_bin_start+0x284>
+2d5:	464101                                                                       	l32r	a0, fffd1bdc <_binary_e21_288ab0_text_bin_end+0xfffd171f>
+2d8:	9d                                                                                              	.byte 0x9d
+2d9:	ff                                                                                              	.byte 0xff
+2da:	00                                                                                              	.byte 00
+2db:	00                                                                                              	.byte 00
+2dc:	6f                                                                                              	.byte 0x6f
+2dd:	d2e606                                                                       	j	ffff4e79 <_binary_e21_288ab0_text_bin_end+0xffff49bc>
+2e0:	1f                                                                                              	.byte 0x1f
+2e1:	8e                                                                                              	.byte 0x8e
+2e2:	8ee844                                                                       	const16	a4, 0x8ee8
+2e5:	4369c4                                                                       	const16	a12, 0x4369
+2e8:	f9e440                                                                       	addx8.a	a14, a4, a4
+2eb:	af2c                                                                            	movi.n	a15, 42
+2ed:	a59c22                                                                       	l16si	a2, a12, 0x14a
+2f0:	0f                                                                                              	.byte 0xf
+2f1:	8d                                                                                              	.byte 0x8d
+2f2:	60                                                                                              	.byte 0x60
+2f3:	32                                                                                              	.byte 0x32
+2f4:	3f                                                                                              	.byte 0x3f
+2f5:	30                                                                                              	.byte 0x30
+2f6:	80                                                                                              	.byte 0x80
+2f7:	081c                                                                            	movi.n	a8, 16
+2f9:	e82082                                                                       	l32i	a8, a0, 0x3a0
+2fc:	b840a5                                                                       	call8	fffb8708 <_binary_e21_288ab0_text_bin_end+0xfffb824b>
+2ff:	c2                                                                                              	.byte 0xc2
+300:	bdeb81                                                                       	l32r	a8, fffefaac <_binary_e21_288ab0_text_bin_end+0xfffef5ef>
+303:	4f28                                                                            	l32i.n	a2, a15, 16
+305:	041426                                                                       	beqi	a4, 1, 30d <_binary_e21_288ab0_text_bin_start+0x30d>
+308:	831a                                                                            	add.n	a8, a3, a1
+30a:	20                                                                                              	.byte 0x20
+30b:	8648                                                                            	l32i.n	a4, a6, 32
+30d:	070ce4                                                                       	const16	a14, 0x70c
+310:	40                                                                                              	.byte 0x40
+311:	bdeb                                                                            	addi.n	a11, a13, 14
+313:	2e                                                                                              	.byte 0x2e
+314:	0040a5303c802acf                                                    	{ beq.w15	a10, a12, 2c1e <_binary_e21_288ab0_text_bin_end+0x2761>; ivp_lv2nx8_i	v19, a0, 0x200 }
+31c:	3944c7                                                                       	ball	a4, a12, 359 <_binary_e21_288ab0_text_bin_start+0x359>
+31f:	d3                                                                                              	.byte 0xd3
+320:	fa8b80                                                                       	depbits	a8, a11, 15, 9
+323:	9e28                                                                            	l32i.n	a2, a14, 36
+325:	b9fa52                                                                       	s32ri	a5, a10, 0x2e4
+328:	8708                                                                            	l32i.n	a0, a7, 32
+32a:	20                                                                                              	.byte 0x20
+32b:	008646                                                                       	j	548 <_binary_e21_288ab0_text_bin_end+0x8b>
+32e:	3f                                                                                              	.byte 0x3f
+32f:	03                                                                                              	.byte 0x3
+330:	1f                                                                                              	.byte 0x1f
+331:	bdaa                                                                            	add.n	a11, a13, a10
+333:	729ea1                                                                       	l32r	a10, fffdcdac <_binary_e21_288ab0_text_bin_end+0xfffdc8ef>
+336:	b9fa                                                                            	add.n	a11, a9, a15
+338:	8718                                                                            	l32i.n	a1, a7, 32
+33a:	a5c620                                                                       	extui	a12, a2, 22, 11
+33d:	02be04                                                                       	const16	a0, 0x2be
+340:	1f                                                                                              	.byte 0x1f
+341:	bdaa                                                                            	add.n	a11, a13, a10
+343:	655fa1                                                                       	l32r	a10, fffd98c0 <_binary_e21_288ab0_text_bin_end+0xfffd9403>
+346:	e1f8a2                                                                       	s32ri	a10, a8, 0x384
+349:	ee0202                                                                       	l8ui	a0, a2, 238
+34c:	c7c021                                                                       	l32r	a2, ffff224c <_binary_e21_288ab0_text_bin_end+0xffff1d8f>
+34f:	73                                                                                              	.byte 0x73
+350:	43                                                                                              	.byte 0x43
+351:	062d40226f3260b106e1fe56af41023e                                  	{ bbci.w15	a2, 3, 20e7 <_binary_e21_288ab0_text_bin_end+0x1c2a>; extui	a0, a4, 17, 1; ivp_muluupan16xr16	wv3, v31, v24, pr2; ivp_sel2nx8i	v14, v7, v5, 57; ivp_babssubnx16	vb14, v9, v3, v15 }
+361:	ee                                                                                              	.byte 0xee
+362:	6f4112                                                                       	s8i	a1, a1, 111
+365:	2d4032                                                                       	s8i	a3, a0, 45
+368:	12ee06                                                                       	j	4f24 <_binary_e21_288ab0_text_bin_end+0x4a67>
+36b:	076f41                                                                       	l32r	a4, fffc2128 <_binary_e21_288ab0_text_bin_end+0xfffc1c6b>
+36e:	6008b4                                                                       	const16	a11, 0x6008
+371:	460181                                                                       	l32r	a8, fffd1b78 <_binary_e21_288ab0_text_bin_end+0xfffd16bb>
+374:	4f4064                                                                       	const16	a6, 0x4f40
+377:	ae3f97                                                                       	bltu	a15, a9, 329 <_binary_e21_288ab0_text_bin_start+0x329>
+37a:	064101                                                                       	l32r	a0, fffc1c80 <_binary_e21_288ab0_text_bin_end+0xfffc17c3>
+37d:	00ff74                                                                       	const16	a7, 255
+380:	6f                                                                                              	.byte 0x6f
+381:	d2e606                                                                       	j	ffff4f1d <_binary_e21_288ab0_text_bin_end+0xffff4a60>
+384:	45ce17                                                                       	bnall	a14, a1, 3cd <_binary_e21_288ab0_text_bin_start+0x3cd>
+387:	84e8                                                                            	l32i.n	a14, a4, 32
+389:	4369c4                                                                       	const16	a12, 0x4369
+38c:	f9b440                                                                       	addx8.a	a11, a4, a4
+38f:	af2c                                                                            	movi.n	a15, 42
+391:	a59c22                                                                       	l16si	a2, a12, 0x14a
+394:	0f                                                                                              	.byte 0xf
+395:	8d                                                                                              	.byte 0x8d
+396:	60                                                                                              	.byte 0x60
+397:	32                                                                                              	.byte 0x32
+398:	3f                                                                                              	.byte 0x3f
+399:	30                                                                                              	.byte 0x30
+39a:	001c80                                                                       	movsp	a8, a12
+39d:	e820a2                                                                       	l32i	a10, a0, 0x3a0
+3a0:	b840a4                                                                       	const16	a10, 0xb840
+3a3:	c2                                                                                              	.byte 0xc2
+3a4:	bdbb81                                                                       	l32r	a8, fffefa90 <_binary_e21_288ab0_text_bin_end+0xfffef5d3>
+3a7:	4f28                                                                            	l32i.n	a2, a15, 16
+3a9:	001426                                                                       	beqi	a4, 1, 3ad <_binary_e21_288ab0_text_bin_start+0x3ad>
+3ac:	20c312                                                                       	addi	a1, a3, 32
+3af:	84c8                                                                            	l32i.n	a12, a4, 32
+3b1:	010ce4                                                                       	const16	a14, 0x10c
+3b4:	40                                                                                              	.byte 0x40
+3b5:	bdbb                                                                            	addi.n	a11, a13, 11
+3b7:	2e                                                                                              	.byte 0x2e
+3b8:	0040a5303c802acf                                                    	{ beq.w15	a10, a12, 2cc2 <_binary_e21_288ab0_text_bin_end+0x2805>; ivp_lv2nx8_i	v19, a0, 0x200 }
+3c0:	3944c7                                                                       	ball	a4, a12, 3fd <_binary_e21_288ab0_text_bin_start+0x3fd>
+3c3:	d3                                                                                              	.byte 0xd3
+3c4:	fa8b80                                                                       	depbits	a8, a11, 15, 9
+3c7:	9e28                                                                            	l32i.n	a2, a14, 36
+3c9:	b9fa52                                                                       	s32ri	a5, a10, 0x2e4
+3cc:	20c700                                                                       	or	a12, a7, a0
+3cf:	008446                                                                       	j	5e4 <_binary_e21_288ab0_text_bin_end+0x127>
+3d2:	3f                                                                                              	.byte 0x3f
+3d3:	03                                                                                              	.byte 0x3
+3d4:	1f                                                                                              	.byte 0x1f
+3d5:	b7aa                                                                            	add.n	a11, a7, a10
+3d7:	729ea1                                                                       	l32r	a10, fffdce50 <_binary_e21_288ab0_text_bin_end+0xfffdc993>
+3da:	b9fa                                                                            	add.n	a11, a9, a15
+3dc:	20a710                                                                       	or	a10, a7, a1
+3df:	04a4c6                                                                       	j	1676 <_binary_e21_288ab0_text_bin_end+0x11b9>
+3e2:	be                                                                                              	.byte 0xbe
+3e3:	aa1f02                                                                       	l16ui	a0, a15, 0x154
+3e6:	5fa1b7                                                                       	bge	a1, a11, 449 <_binary_e21_288ab0_text_bin_start+0x449>
+3e9:	f8a265                                                                       	call8	ffff8e10 <_binary_e21_288ab0_text_bin_end+0xffff8953>
+3ec:	0202e1                                                                       	l32r	a14, fffc0bf4 <_binary_e21_288ab0_text_bin_end+0xfffc0737>
+3ef:	ee                                                                                              	.byte 0xee
+3f0:	c7c021                                                                       	l32r	a2, ffff22f0 <_binary_e21_288ab0_text_bin_end+0xffff1e33>
+3f3:	73                                                                                              	.byte 0x73
+3f4:	43                                                                                              	.byte 0x43
+3f5:	062d40226f3260b106e1fe56af41023e                                  	{ bbci.w15	a2, 3, 218b <_binary_e21_288ab0_text_bin_end+0x1cce>; extui	a0, a4, 17, 1; ivp_muluupan16xr16	wv3, v31, v24, pr2; ivp_sel2nx8i	v14, v7, v5, 57; ivp_babssubnx16	vb14, v9, v3, v15 }
+405:	ee                                                                                              	.byte 0xee
+406:	6f4112                                                                       	s8i	a1, a1, 111
+409:	2d4032                                                                       	s8i	a3, a0, 45
+40c:	12ee06                                                                       	j	4fc8 <_binary_e21_288ab0_text_bin_end+0x4b0b>
+40f:	076f41                                                                       	l32r	a4, fffc21cc <_binary_e21_288ab0_text_bin_end+0xfffc1d0f>
+412:	6008b4                                                                       	const16	a11, 0x6008
+415:	660301                                                                       	l32r	a0, fffd9c24 <_binary_e21_288ab0_text_bin_end+0xfffd9767>
+418:	0c4164                                                                       	const16	a6, 0xc41
+41b:	c63f17                                                                       	bltu	a15, a1, 3e5 <_binary_e21_288ab0_text_bin_start+0x3e5>
+41e:	064101                                                                       	l32r	a0, fffc1d24 <_binary_e21_288ab0_text_bin_end+0xfffc1867>
+421:	ff4b                                                                            	addi.n	a15, a15, 4
+423:	f01d00                                                                       	subx8	a1, a13, a0
+426:	00                                                                                              	.byte 00
+427:	413600                                                                       	srli	a3, a0, 6
+42a:	023800                                                                       	andb	b3, b8, b0
+42d:	bf                                                                                              	.byte 0xbf
+42e:	09a200                                                                       	l32e	a0, a2, -24
+431:	0008                                                                            	l32i.n	a0, a0, 0
+433:	bf42a2                                                                       	s8i	a10, a2, 191
+436:	80                                                                                              	.byte 0x80
+437:	001942                                                                       	l16ui	a4, a9, 0
+43a:	42a200                                                                       	xorb	b10, b2, b0
+43d:	4f                                                                                              	.byte 0x4f
+43e:	b3                                                                                              	.byte 0xb3
+43f:	25cb                                                                            	addi.n	a2, a5, 12
+441:	0058                                                                            	l32i.n	a5, a0, 0
+443:	344281                                                                       	l32r	a8, fffcd54c <_binary_e21_288ab0_text_bin_end+0xfffcd08f>
+446:	340200                                                                       	extui	a0, a0, 2, 4
+449:	0088                                                                            	l32i.n	a8, a0, 0
+44b:	006322                                                                       	s32i	a2, a3, 0
+44e:	0004e0                                                                       	callx8	a4
+451:	020034                                                                       	const16	a3, 0x200
+454:	020024                                                                       	const16	a2, 0x200
+457:	000c34                                                                       	const16	a3, 12
+45a:	000c24                                                                       	const16	a2, 12
+45d:	c04230                                                                       	sub	a4, a2, a3
+460:	3f                                                                                              	.byte 0x3f
+461:	622212                                                                       	l32i	a1, a2, 0x188
+464:	6f                                                                                              	.byte 0x6f
+465:	a60281                                                                       	l32r	a8, fffe9c70 <_binary_e21_288ab0_text_bin_end+0xfffe97b3>
+468:	01c006                                                                       	j	b6c <_binary_e21_288ab0_text_bin_end+0x6af>
+46b:	d38007                                                                       	bany	a0, a0, 442 <_binary_e21_288ab0_text_bin_start+0x442>
+46e:	484101                                                                       	l32r	a0, fffd2574 <_binary_e21_288ab0_text_bin_end+0xfffd20b7>
+471:	20f002                                                                       	s32ri	a0, a0, 128
+474:	04e000                                                                       	extui	a14, a0, 0, 1
+477:	f43f00                                                                       	extui	a3, a0, 15, 16
+47a:	6716c2                                                                       	l16ui	a12, a6, 206
+47d:	a61221                                                                       	l32r	a2, fffe9cc8 <_binary_e21_288ab0_text_bin_end+0xfffe980b>
+480:	00                                                                                              	.byte 00
+481:	c3                                                                                              	.byte 0xc3
+482:	430716                                                                       	beqz	a7, 8b6 <_binary_e21_288ab0_text_bin_end+0x3f9>
+485:	4101d4                                                                       	const16	a13, 0x4101
+488:	f01d                                                                            	retw.n
+48a:	00                                                                                              	.byte 00
+48b:	413600                                                                       	srli	a3, a0, 6
+48e:	00                                                                                              	.byte 00
+48f:	020034                                                                       	const16	a3, 0x200
+492:	020024                                                                       	const16	a2, 0x200
+495:	000c34                                                                       	const16	a3, 12
+498:	000c24                                                                       	const16	a2, 12
+49b:	c04320                                                                       	sub	a4, a3, a2
+49e:	3f                                                                                              	.byte 0x3f
+49f:	9d4222                                                                       	s8i	a2, a2, 157
+4a2:	440087                                                                       	bnone	a0, a8, 4ea <_binary_e21_288ab0_text_bin_end+0x2d>
+4a5:	43                                                                                              	.byte 0x43
+4a6:	0248                                                                            	l32i.n	a4, a2, 0
+4a8:	0004e0                                                                       	callx8	a4
+4ab:	3f                                                                                              	.byte 0x3f
+4ac:	1442f7                                                                       	ball	a2, a15, 4c4 <_binary_e21_288ab0_text_bin_end+0x7>
+4af:	122161                                                                       	l32r	a6, fffc4d34 <_binary_e21_288ab0_text_bin_end+0xfffc4877>
+4b2:	4300a6                                                                       	blti	a0, -1, 4f9 <_binary_e21_288ab0_text_bin_end+0x3c>
+4b5:	430716                                                                       	beqz	a7, 8e9 <_binary_e21_288ab0_text_bin_end+0x42c>
+4b8:	4101d4                                                                       	const16	a13, 0x4101
+4bb:	f01d                                                                            	retw.n

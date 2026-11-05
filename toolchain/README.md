@@ -243,6 +243,29 @@ Effect of iDMA staging, posted stores and the `nsau`/`muluh` soft-float primitiv
 
 Float-heavy operators are now bound by soft-float arithmetic (~100–300 cycles per operation).
 
+## Vector instructions (experimental)
+
+The trn3 GPSIMD cores have a 512-bit vector unit, but the SDK ships no Xtensa configuration for the trn3
+core, so the compiler cannot emit vector code. `include/gpsimd/vec.h` provides reverse-engineered vector
+instructions as raw bundles (see `../vecre/README.md` for how they were found and verified):
+
+```cpp
+#include <gpsimd/vec.h>
+register int32_t *pa __asm__("a8") = x, *pb __asm__("a9") = y, *po __asm__("a10") = out;
+for (uint32_t k = 0; k < n / 16; ++k)          // 16 x int32 per instruction
+    __asm__ volatile(GPV_LD_IP(0, 8) GPV_LD_IP(1, 9) GPV_ADD32(2, 0, 1) GPV_ST_IP(2, 10)
+                     : "+r"(pa), "+r"(pb), "+r"(po) : : "memory");
+```
+
+- Build with `CFLAGS = ["--allow-vector"]` (skips the base-ISA-only check for the raw bundles).
+- Vector loads/stores move 64 bytes and need **64-byte-aligned** addresses (misaligned ones raise an
+  address exception, which hangs the call); NKI tiles are 32-byte aligned, so stage through aligned
+  local-RAM buffers (`examples/vec_add_i32`) or handle the misaligned head/tail with scalar code.
+- Available: loads/stores (with post-increment), add/sub (8/16/32-bit lanes), and/or/xor, signed/unsigned
+  min/max, averages, absolute difference, shifts by immediates. Verified with registers v0..v15.
+- `examples/vec_add_i32`: the add loop is 19x faster than scalar code (2,585 vs 49,170 cycles per core for
+  8192 int32), the whole operator 4.8x (iDMA staging included).
+
 ## Hardware facts and limitations
 
 * Only base-ISA Xtensa code runs: the ncore2gp FLIX/vector/FPU encodings shipped with the tools do not

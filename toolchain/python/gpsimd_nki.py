@@ -164,6 +164,9 @@ def compile(kernel, example_inputs, out_dir, target="trn3"):
     os.environ.setdefault("NEURON_PLATFORM_TARGET_OVERRIDE", target)
     os.environ["NEURON_LOGICAL_NC_CONFIG"] = "1"     # forced: importing torch(-neuronx) sets it to 2
     os.environ["NKI_DISABLE_COMPILE_CACHE"] = "1"
+    if shutil.which("neuronx-cc") is None:           # venv python run without activating the venv
+        import sys
+        os.environ["PATH"] = os.path.dirname(sys.executable) + os.pathsep + os.environ.get("PATH", "")
     art = tempfile.mkdtemp(prefix="gpsimd_nki_")
     os.environ["NKI_ARTIFACTS_DIR"] = art
     _sites.clear()
