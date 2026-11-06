@@ -72,7 +72,7 @@
 \maketitle
 
 \begin{abstract}
-Emerging memory modules of large language models, such as Engram in DeepSeek-V4.1-Flash, mix irregular integer work (a 64-bit n-gram hash and a sparse table lookup) with dense computation (a GEMM and a gate). A GPU-FPGA prototype that offloads the irregular steps accelerates Engram by up to 5.9$\times$, which shows the promise of disaggregation on heterogeneous hardware. AWS Trainium provides this heterogeneity natively: each Trainium  NeuronCore pairs dense engines with an 8-core GPSIMD Engine, and all engines share the on-chip SBUF. However, the Neuron Kernel Interface (NKI) exposes the GPSIMD cores only through fixed built-in instructions, and the \textbf{official GPSIMD custom-operator toolchain does not support Trainium 2 or 3 and cannot be used with NKI}. We build a toolchain\footnote{\url{https://github.com/OswaldHe/neuron-gpsimd-tool}} that compiles C++ custom operators for the GPSIMD cores and injects them into the compiled NKI kernel as \code{KERNEL\_CALL} instructions that read and write the same SBUF tiles as the surrounding NKI code. Over a hand-optimized NKI baseline of DeepSeek-V4.1-Flash, two GPSIMD operators speed up the n-gram hashing by 1.79$\times$ at decode, the table retrieval by up to 4.95$\times$, and the whole Engram computation by up to 1.14$\times$.
+Emerging memory modules of large language models, such as Engram in DeepSeek-V4.1-Flash, mix irregular integer work (a 64-bit n-gram hash and a sparse table lookup) with dense computation (a GEMM and a gate). When deploying on a GPU-FPGA system, we can disaggregate operations to different devices for Engram to speedup by 5.9$\times$. AWS Trainium provides a similar heterogeneity natively: each Trainium  NeuronCore pairs dense engines with an customizable GPSIMD Engine, and all engines share the on-chip SBUF. However, the Neuron Kernel Interface (NKI) exposes the GPSIMD cores only through fixed built-in instructions, and the \textbf{official GPSIMD custom-operator toolchain does not support Trainium 2 or 3 and cannot be used with NKI}. In this work, we build a toolchain\footnote{\url{https://github.com/OswaldHe/neuron-gpsimd-tool}} that compiles C++ custom operators for the GPSIMD cores and injects them into the compiled NEFF from NKI kernel on Trainium 3, expanding the customizability of GPSIMD with current software stack. Over a hand-optimized NKI baseline of DeepSeek-V4.1-Flash, two GPSIMD operators speed up the n-gram hashing by 1.79$\times$ at decode, the table retrieval by up to 4.95$\times$, and the whole Engram computation by up to 1.14$\times$.
 \end{abstract}
 
 \begin{center}
@@ -118,13 +118,13 @@ The key is that these steps have very different computational characteristics. S
 \subsection{Example: Engram in DeepSeek-V4.1-Flash, and How We Accelerate It on a GPU-FPGA System}
 \label{sec:engram}
 
-DeepSeek-V4.1-Flash~\citep{deepseek_v41_flash} is the recent 40-layer mixture-of-experts (MoE) reasoning model from DeepSeek. It combines sparse attention with MoE layers of 384 routed experts, 6 of which serve each token. Layers 1 and 14 also have an \textbf{Engram} module~\citep{engram} that gives the model a large n-gram memory. For each token, Engram hashes the token and its preceding tokens into row ids, reads these rows from a large learned table, and adds a gated projection of the rows to the hidden state. Engram maps to the memory processing pipeline as follows:
+DeepSeek-V4.1-Flash~\citep{deepseek_v41_flash} is a 40-layer mixture-of-experts (MoE) reasoning model from DeepSeek. It combines sparse attention with MoE layers of 384 routed experts, 6 of which serve each token. Layers 1 and 14 also have an \textbf{Engram} module~\citep{engram} that gives the model a large n-gram memory. For each token, Engram hashes the token and its preceding tokens into row ids, reads these rows from a large learned table, and adds a gated projection of the rows to the hidden state. Engram maps to the memory processing pipeline as follows:
 
 \begin{itemize}[leftmargin=*,itemsep=1pt]
   \item \textbf{Prepare Memory.} The table is trained offline. In DeepSeek-V4.1-Flash, each Engram layer has 384M rows of 256 bf16 values. At run time, each token's n-gram window is collected: the token's compressed id and the ids of the 3 preceding tokens.
   \item \textbf{Compute Relevancy.} An n-gram hash turns each window into row ids. For $n = 2, 3, 4$, the hash multiplies each token id by a 64-bit constant, combines the products with XOR, and reduces the result modulo one of 8 primes of about 16M. Each token gets $3 \times 8 = 24$ row ids per layer.
   \item \textbf{Retrieval.} The 24 rows of each token are read into an embedding \code{emb} of shape $[T, 24 \times 256]$.
-  \item \textbf{Apply to Inference.} A GEMM projects \code{emb} to 4 keys and 1 value of 5120 values each. A gate adds the value to each of the 4 residual streams, scaled by the dot product of the stream's hidden state and its key.
+  \item \textbf{Apply to Inference.} A GEMM projects \code{emb} to 4 keys and 1 value to compute the attention score between the hidden state and the keys. A gate adds the value to each of the 4 residual streams.
 \end{itemize}
 
 We also tried to deploy Engram on our GPU-FPGA heterogeneous system to demonstrate the effectiveness of such abstraction~\citep{heterollm}. Here we use the original demo of Engram in~\citep{engram_code}:
@@ -141,7 +141,7 @@ We also tried to deploy Engram on our GPU-FPGA heterogeneous system to demonstra
   \label{fig:fpga_split}
 \end{figure}
 
-The baseline is the reference code~\citep{engram_code} on the GPU, which computes the hash on the host CPU. With 2 AMD U55C FPGAs and 1 AMD MI210 GPU, Engram is 5.2$\times$ faster at 8 tokens, 5.9$\times$ faster at 32 tokens and 1.15$\times$ faster at 1024 tokens (Figure~\ref{fig:fpga_results}). The gain is largest at few tokens, as in decode. There, most of the baseline time is a fixed cost per call: the hash on the host, the copy of the ids, and many small GPU operators. At 8 tokens, the baseline spends 0.98\,ms on the hash alone, while the FPGA takes 0.39\,ms for the hash, the lookup and the projections together.
+The baseline is the reference code~\citep{engram_code} on the GPU, which computes the hash on the host CPU. With 2 AMD U55C FPGAs and 1 AMD MI210 GPU, Engram is 5.2$\times$ faster at 8 tokens, 5.9$\times$ faster at 32 tokens and 1.15$\times$ faster at 1024 tokens (Figure~\ref{fig:fpga_results}). The gain is largest with short prefill and decode.
 
 \begin{figure}[!htbp]
   \centering
@@ -155,7 +155,7 @@ The prototype shows that Engram gains from moving its irregular steps to flexibl
 \subsection{Native Hardware Heterogeneity of Trainium}
 \label{sec:trainium}
 
-In this work, we conduct all the experiments on a Trainium~3 instance. A trn3.48xlarge instance exposes 64 NeuronCores (each made of 2 physical cores). A Trainium~3 NeuronCore is a heterogeneous processor (Figure~\ref{fig:trn3}). The \textbf{Tensor Engine} is a 128$\times$128 systolic array for matrix multiplication. The \textbf{Vector Engine} and the \textbf{Scalar Engine} apply element-wise operations, reductions and activation functions to tiles of up to 128 partitions. The \textbf{Sync Engine} issues queued DMA transfers. All engines read and write the on-chip \textbf{SBUF} (state buffer), and the Tensor Engine accumulates into \textbf{PSUM}.
+A trn3.48xlarge instance exposes 64 NeuronCores (each made of 2 physical cores). A Trainium~3 NeuronCore is a heterogeneous processor (Figure~\ref{fig:trn3}). The \textbf{Tensor Engine} is a 128$\times$128 systolic array for matrix multiplication. The \textbf{Vector Engine} and the \textbf{Scalar Engine} apply element-wise operations, reductions and activation functions to tiles of up to 128 partitions. The \textbf{Sync Engine} issues queued DMA transfers. All engines read and write the on-chip \textbf{SBUF} (state buffer), and the Tensor Engine accumulates into \textbf{PSUM}.
 
 The fifth engine, the \textbf{GPSIMD Engine}, is different from the other four. The GPSIMD Engine is a group of 8 general-purpose SIMD cores. Each core has its own local data RAM, an integrated DMA channel (iDMA), and a compute unit that support 64-bit wide arithmetics. The cores run firmware that implements the GPSIMD Engine's instructions in software.
 
@@ -187,13 +187,13 @@ Each engine fits a different kind of computation. Hence, each step of Engram has
 
 The n-gram hashing and the table retrieval go to the GPSIMD cores because both are irregular integer work. The hash needs 64-bit products and a 64-bit modulo: the cores compute the products, while the other engines compute exact integer arithmetic only on 32-bit values. In the table retrieval, only about 1.5\% of a token's lookups hit the table shard of a rank. GPSIMD engine can drive the table lookups on these entries in the table to issue DMA. The dense GEMM and the gate stay on the Tensor, Vector and Scalar Engines, as GPSIMD engine has much lower peak performance in dense linear algebra than other engines. In general, a step suits the GPSIMD cores when it is integer-heavy, data-dependent, and small in data compared with the dense work around it.
 
-Although this is a promising plan, a major blocker for most developer on Trainium is that there is no official support to connect custom GPSIMD operations with the kernel language in Trainium to optimize the whole kernel. In the next section, we will illustrate how to integrate custom GPSIMD operator with Neuron Kernel Interface (NKI) for a coherent optimization.
+Although this is a promising plan, a major blocker for developers on Trainium is that there is no official support to connect custom GPSIMD operations with the kernel language in Trainium to optimize the whole kernel. In the next section, we will illustrate how to integrate custom GPSIMD operator with Neuron Kernel Interface (NKI) for a coherent optimization.
 
 %=====================================================================
 \section{Build and Use GPSIMD Custom Operators for Kernel Optimization}
 \label{sec:toolchain}
 
-The \textbf{Neuron Kernel Interface (NKI)}~\citep{nki_about} is the Python kernel language for Trainium to speedup computations. Currently, NKI exposes the GPSIMD Engine only through built-in instructions on Trainium~3: tensor operations with \code{engine=gpsimd}, \code{iota}, \code{topk}, and the descriptor generation of indirect DMAs (``software DGE''). The official toolchain for custom GPSIMD code, the Neuron custom C++ operators~\citep{neuron_customops}, does not solve this problem on Trainium 2 and Trainium 3. First, it supports only \textbf{NeuronCore-v2} (Trainium~1 and Inferentia~2), and the compiler rejects it for Trainium~3 targets (error \code{NCC\_EVRF030}). Second, \textbf{a custom operator runs only as a PyTorch operator through PyTorch/XLA, and it cannot be called from an NKI kernel}. Third, the toolchain is in maintenance mode starting with Neuron 2.33. Therefore, Trainium~2 and Trainium~3 have no official way to add a custom GPSIMD operator to a kernel. To fill this gap, we reverse engineered how the Neuron runtime loads and runs GPSIMD code, and built a toolchain that injects GPSIMD operators into the Neuron Executable File Format (NEFF) of a compiled NKI kernel.
+The \textbf{Neuron Kernel Interface (NKI)}~\citep{nki_about} is the Python kernel language for Trainium to speedup computations. Currently, NKI exposes the GPSIMD Engine only through built-in instructions on Trainium~3: tensor operations with \code{engine=gpsimd}, \code{iota}, \code{topk}, and the descriptor generation of indirect DMAs. The official toolchain for custom GPSIMD code, the Neuron custom C++ operators~\citep{neuron_customops}, does not solve this problem on Trainium 2 and Trainium 3. First, it supports only \textbf{NeuronCore-v2} (Trainium~1 and Inferentia~2), and the compiler rejects it for Trainium~3 targets (error \code{NCC\_EVRF030}). Second, \textbf{a custom operator runs only as a PyTorch operator through PyTorch/XLA, and it cannot be called from an NKI kernel}. Third, the toolchain is in maintenance mode starting with Neuron 2.33. Therefore, Trainium~2 and Trainium~3 have no official way to add a custom GPSIMD operator to a kernel. To fill this gap, we reverse engineered how the Neuron runtime loads and runs GPSIMD code, and built a toolchain that injects GPSIMD operators into the Neuron Executable File Format (NEFF) of a compiled NKI kernel.
 
 \subsection{Overall Development and Deployment Flow}
 \label{sec:flow}
@@ -296,7 +296,7 @@ def kernel(a, b):
     return out
 \end{lstlisting}
 
-Because the NKI compiler does not know custom operators, \code{gp.call} cannot emit the call itself. Instead, it emits \textbf{marker instructions}: ordinary GPSIMD Engine instructions (\code{TENSOR\_SCALAR\_ARITH\_OP} and \code{MEMSET}) whose immediate operand carries a tag ($2^{20} + 4096\cdot\text{site} + 512\cdot\text{role} + 32\cdot\text{argument} + \text{chunk}$) so that the injector will not confuse with other instructions. The tag tells the toolchain which call site, role and tile a marker belongs to. The marker indicates what the GPSIMD operator will access and modify (Table~\ref{tab:markers}).
+Because the NKI compiler does not know custom operators, \code{gp.call} cannot emit the call itself. Instead, it emits \textbf{marker instructions}: ordinary GPSIMD Engine instructions (\code{TENSOR\_SCALAR\_ARITH\_OP} and \code{MEMSET}) whose immediate operand carries a tag (an encoded bit value) so that the injector will not confuse with other instructions. The tag tells the toolchain which call site, role and tile a marker belongs to. The marker indicates what the GPSIMD operator will access and modify (Table~\ref{tab:markers}).
 
 \begin{table}[h]
   \centering
@@ -351,7 +351,7 @@ The engines run independently and synchronize only through \textbf{semaphores}. 
 
 \code{gpsimd-neff analyze} reads the compiled \code{kernel.neff} and finds the tagged markers in the GPSIMD Engine's instruction stream (\code{Pool0.bin}). The marker operands give the SBUF location of every tile: the first partition, the number of partitions, the byte offset inside a partition, the data type, and the free-axis access pattern. In the join marker of Figure~\ref{fig:slot}, which writes the output tile of the n-gram hashing call site, the second immediate holds the tag $2^{20} + 512\cdot 5$ (site 0, role 5: join). The destination address is \code{0x4600}, and the operand covers 128 partitions with 48 int32 values each. Correspondingly, we hardcode the SBUF addresses in the custom operator.
 
-\code{gpsimd-neff inject} adds two files and one key to the subgraph folder, rewrites the instruction streams, and repacks the archive with a new payload size and MD5 in the header:
+\code{gpsimd-neff inject} adds two files and one key to the subgraph folder, rewrites the instruction streams, and repacks the archive:
 
 \begin{lstlisting}
 final.neff
@@ -446,7 +446,7 @@ Figure~\ref{fig:tl_hash} shows where the time goes. Both versions spend the firs
 \subsection{Table Retrieval}
 \label{sec:retrieval}
 
-After the hashing, each rank reads the rows of its table shard into \code{emb}, and an all-reduce over the 64 ranks then completes \code{emb} (Figure~\ref{fig:engram_split}). We studied and experimented on both a prefill chunk of $T = 1024$ and $T = 2048$ tokens, and also on decode. To retrieve the embeddings, rank $r$ computes
+After the hashing, each rank reads the rows of the table shard, and an all-reduce over the 64 ranks (Figure~\ref{fig:engram_split}). We studied and experimented on both a prefill chunk of $T = 1024$ and $T = 2048$ tokens, and also on decode. To retrieve the embeddings, rank $r$ computes
 \[
   \mathrm{emb}[t, c] =
   \begin{cases}
@@ -454,7 +454,7 @@ After the hashing, each rank reads the rows of its table shard into \code{emb}, 
     0 & \text{otherwise,}
   \end{cases}
 \]
-where $\mathrm{id}_{t,c}$ is the row id of token $t$ in hash column $c$, $E_r$ is the table shard of rank $r$, and $R$ is its number of rows. We call the lookups whose row id falls inside the shard \emph{hits}. A shard holds 1/64 of the table. Consequently, it overlaps the blocks of at most 2 of the 24 hash columns of a layer.
+where $\mathrm{id}_{t,c}$ is the row id of token $t$ in hash column $c$, $E_r$ is the table shard of rank $r$, and $R$ is its number of rows. We call the lookups whose row id falls inside the shard \emph{hits}.
 
 The number and the positions of the hits are known only at run time. However, NKI needs static shapes: the size of every DMA is fixed when the kernel is compiled. The baseline NKI kernel (\code{engram\_gather}) therefore fetches every row. It computes a mask that marks the hits, issues one indirect DMA of 128 rows for every 128-token tile and hash column, and multiplies the fetched rows by the mask. Consequently, it fetches all rows to keep about 1.5\% of them. This is not efficient because the cost of an indirect DMA grows with its number of indices, not with its number of useful rows, incurring extra unnecessary memory access overhead.
 
@@ -498,7 +498,6 @@ Most of the time saved on prefill chunks comes from the table retrieval, and Fig
 
 This speedup is nontrivial. Since Engram runs for every token of every forward step, the saved time directly reduces the latency of every prefill and decode step. More broadly, the result shows that irregular integer steps, which the dense engines handle poorly, can move to the GPSIMD cores inside an existing NKI kernel and give an end-to-end gain without any change to the dense computation around them.
 
-
 \begin{table}[!htbp]
   \centering
   \caption{Latency of the Engram computations on one NeuronCore, for the baseline and with GPSIMD custom operators (GPSIMD + NKI).}
@@ -538,7 +537,7 @@ This speedup is nontrivial. Since Engram runs for every token of every forward s
 \section{What Other Operations Can GPSIMD Help With?}
 \label{sec:other}
 
-Nothing in this method is specific to Engram. Any step that is integer-heavy, data-dependent and small in data compared with the dense work around it is a candidate (see Section~\ref{sec:trainium}). Before Engram, we used the same toolchain on kernels of the NKI Library~\citep{nki_library}. Against the library's NKI implementations, we measured the speedups in Table~\ref{tab:other}.
+We tried the GPSIMD custom kernel in other scenarios as well. Although some kernels may not be the bottleneck of inference or unrelated to ML workloads at this moment, we believe that this can broaden our scope of future algorithm design instead of sticking to the dense operations that Tensor/Vector/Scalar engines are good at. Any step that is integer-heavy, data-dependent, irregular, and small in data compared with the dense work around it is a candidate (see Section~\ref{sec:trainium}). Before Engram, we used the same toolchain on kernels of the NKI Library~\citep{nki_library}. Against the library's NKI implementations, we measured the speedups in Table~\ref{tab:other}.
 
 \begin{table}[h]
   \centering
@@ -547,10 +546,10 @@ Nothing in this method is specific to Engram. Any step that is integer-heavy, da
   \small
   \begin{tabular}{lr}
     \toprule
-    \textbf{Kernel} & \textbf{Speedup over the NKI Library} \\
+    \textbf{Kernel} & \textbf{Speedup over optimized NKI} \\
     \midrule
     argsort & 6.6$\times$ to 40$\times$ \\
-    BM25 scoring & 15$\times$ to 27$\times$ \\
+    BM25 scoring for RAG & 15$\times$ to 27$\times$ \\
     scatter-add with duplicate indices & 4.45$\times$ \\
     \bottomrule
   \end{tabular}
