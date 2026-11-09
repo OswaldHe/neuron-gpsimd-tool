@@ -1,7 +1,7 @@
 /* gpsimd.h - device-side helpers for trn3 GPSIMD kernel libraries.
  *
  * SBUF access requires the host to map SBUF into the cores' address space before execution
- * (tools/run_neff.py --map-sbuf, tools/sbufwin.py): translation entry 38 makes
+ * (runner/run_neff.cpp does this after nrt_load): translation entry 38 makes
  *     core address SBUF_WINDOW + p * SBUF_PARTITION_STRIDE + byte_offset  ==  SBUF partition p
  * using the same partition/offset addressing as NKI/NEFF (tile at SBUF offset X -> byte X).
  * All 8 GPSIMD cores run every kernel; core k conventionally owns partitions 16k..16k+15.

@@ -110,7 +110,7 @@ local loopback (not run). Output checked against numpy.
 The expert FFN dominates (PE busy ~209 us), so the 4.95x of the dispatch step becomes ~1.5x for the layer
 (collectives would dilute it further). Against the hand-optimized NKI dispatch, GPSIMD stays ~2 us slower
 (~0.99x). The GPSIMD layer could not be re-measured with the metadata-waiting loopback, because that loop puts
-control flow in the Pool program, which `gpsimd-neff inject` does not support (details in PROGRESS.md).
+control flow in the Pool program, which `gpsimd-neff inject` does not support.
 
 ## DeepSeek-V4.1-Flash: GPSIMD inside the port's hand-optimized NKI (`cases/ds41_*`)
 
@@ -166,7 +166,7 @@ static schedule (2*Tp/128 DMAs with skipped padding: a token has at most 2 hits)
   needs data-dependent sizes, and NKI has none that are cheap: skipped DMA indices cost as much as real ones
   (`cases/dma_skip`), a loop iteration ~2.4 us, and union-space attention at a static worst-case width makes
   the softmax 6.8x wider.
-* *MoE at decode:* 56.5 us fixed + ~84 us per active expert, which is MXFP4 weight streaming; a GPSIMD-built
+* *MoE at decode* (`cases/ds41_moe`, baseline only): 56.5 us fixed + ~84 us per active expert, which is MXFP4 weight streaming; a GPSIMD-built
   schedule would only remove per-expert loop overhead and would turn the weights' static (hardware-DGE)
   addresses into runtime ones.
 * *mHC (Sinkhorn), DSpark drafter:* floating point (the cores have no FPU: soft-float 100-300 cycles an op) or
@@ -180,14 +180,13 @@ cases/<case>/case.py     baseline_kernel, gpsimd_kernel, make_inputs, reference,
 cases/<case>/op.cpp      the GPSIMD operator
 cases/<case>/build*/     NEFFs, operator library, inputs, results.json (per configuration)
 cases/ann/prep.py        dataset, proximity graph, PQ (cached in cases/ann/data/)
-PROGRESS.md              log of the measurements and findings
 ```
 
 ## Reproduce
 
 ```bash
 source /opt/aws_neuronx_venv_torch_neuronx_2_14_0/bin/activate
-cd ~/trn3-gpsimd-re/nkiopt
+cd ~/neuron-gpsimd-tool/nkiopt
 python bench.py cases/argsort --set N=4096                      # baseline + GPSIMD, 5 profiled repeats
 python bench.py cases/argsort --set N=4096 --set KEYS=random
 python bench.py cases/moe_permute

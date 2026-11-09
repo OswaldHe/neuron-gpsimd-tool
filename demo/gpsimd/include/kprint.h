@@ -1,7 +1,7 @@
 /* kprint.h - printf for trn3 GPSIMD kernel libraries.
  *
  * Each core keeps a log buffer in its own data RAM (.bss of the kernel library). The host reads
- * it over PCIe BAR0 after execution (tools/klog.py: scans every core's data RAM 0x80000-0xBFFFF
+ * it over PCIe BAR0 after execution (runner/run_neff.cpp --logs: scans every core's data RAM 0x80000-0xBFFFF
  * for KLOG_MAGIC). No firmware services are used.
  *
  * Buffer layout (all little-endian u32 words):

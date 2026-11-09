@@ -14,12 +14,12 @@ HBM input ──DMA──► SBUF tile ──KERNEL_CALL──► 8 GPSIMD cores
 
 Neither neuronx-cc nor NKI supports GPSIMD custom operators on trn2/trn3 (`NCC_EVRF030`). The demo
 uses the **GPSIMD kernel-library mechanism of the trn3 runtime/firmware**, which was reverse
-engineered on this machine; see "How it works" and `../PROGRESS.md` for the evidence.
+engineered on this machine; see "How it works" for the evidence.
 
 ## Quick start
 
 ```bash
-cd ~/trn3-gpsimd-re/demo
+cd ~/neuron-gpsimd-tool/demo
 ./run_demo.sh                      # ~20 s: builds everything, runs the control and the demo
 ADDEND=-123456789 SEED=7 ITERS=2 ./run_demo.sh   # other parameters
 ```
@@ -92,6 +92,7 @@ The steps can be run individually:
 
 ```bash
 V=/opt/aws_neuronx_venv_torch_neuronx_2_14_0
+mkdir -p build
 PATH=$V/bin:$PATH $V/bin/python nki/sbuf_add_nki.py build/sbuf_add_nki.neff         # 1
 python3 tools/neff_tool.py info build/sbuf_add_nki.neff                               # 2
 gpsimd/build_kernel_lib.sh gpsimd/sbuf_add.cpp build/sbuf_add.so \
@@ -195,7 +196,6 @@ It maps every TPB of the device whose GPSIMD firmware is running and clears the 
 * `nrt_execute failed: NRT_STATUS=5` (timeout): the GPSIMD kernel hung, e.g. it touched an
   unmapped address. Without `--no-map` this should not happen; check that `DEVICE` matches
   `NEURON_RT_VISIBLE_CORES` and that the runner printed `[map] ... on TPB 4 5` (or other TPBs).
-  After a hang the cores' logs can still be read with `../tools/klog.py --tpb 4`.
 * `error: ... contains FLIX bundles`: the compiler emitted bundled (FLIX) instructions that the trn3
   GPSIMD core cannot execute. Remove floating-point or vector code; inspect the library with
   `xt-objdump -d build/sbuf_add.so` (with the environment set by `build_kernel_lib.sh`).

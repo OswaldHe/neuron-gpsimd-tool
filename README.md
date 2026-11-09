@@ -6,11 +6,10 @@ and the official custom-operator toolchain does not support Trainium 2 or 3. Thi
 toolchain that compiles C++ operators for the GPSIMD cores and injects them into a compiled NKI kernel (NEFF)
 as `KERNEL_CALL` instructions. The operators read and write the same SBUF tiles as the NKI code around them.
 
-```
-NKI kernel (gp.call markers) ──neuronx-cc──► kernel.neff ──gpsimd-neff analyze──► call-site tiles
-C++ operators (op.cpp) ──────gpsimd-cc (xt-clang)──► ops.so ◄────────────────────────┘
-kernel.neff + ops.so ──gpsimd-neff inject──► final.neff ──gpsimd-run──► bit-exact check + per-core receipts
-```
+![The toolchain flow](figs/fig06_toolchain.png)
+
+*Overall development and deployment flow of building and using GPSIMD custom operator and connect with
+optimized NKI kernel.*
 
 The paper (`paper/main.pdf`) and the blog post (`BLOG.md`) describe the design and the results. This README
 covers two tasks: setting up the toolchain on a fresh instance, and reproducing the measurements.
@@ -22,7 +21,6 @@ covers two tasks: setting up the toolchain on a fresh instance, and reproducing 
 | `paper/`, `BLOG.md` | the paper and the blog post |
 | `figs/` | figures (`figs/src/make_figs.py`) and the profile timelines they use (`figs/data/`) |
 | `demo/` | the first minimal end-to-end demo (one fixed operator, no toolchain) |
-| `PROGRESS.md`, `re/`, `probes/`, `kl/`, `nki/`, `tools/`, `vecre/` | reverse-engineering notes and experiments behind the toolchain |
 
 ## 1. Set up the toolchain on a fresh DLAMI instance
 

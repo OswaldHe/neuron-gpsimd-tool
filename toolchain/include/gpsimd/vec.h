@@ -1,7 +1,7 @@
 // gpsimd/vec.h - trn3 GPSIMD vector (512-bit) instructions as raw bundles.
 //
 // The SDK ships no Xtensa configuration for the trn3 core, so the vector instructions were reverse
-// engineered on the device (vecre/README.md). Each macro expands to a string of `.byte` directives for
+// engineered on the device. Each macro expands to a string of `.byte` directives for
 // one 8-byte FLIX bundle; register numbers are assembler expressions (compile-time constants).
 // Use the macros inside __asm__ volatile(...) and bind every address register you name to a C variable
 // with `register T *p __asm__("aN")`. Build the operator with CFLAGS = ["--allow-vector"].
@@ -10,8 +10,7 @@
 // (v0..v31), the load/store fields 4 bits (v0..v15). Vector loads/stores move 64 bytes and work on local
 // data RAM and on the SBUF window (0xD0000000 + partition * 0x40000 + offset).
 //
-// Verified on trn3 (Neuron SDK 2.33, GPSIMD firmware 1.25.36) in the sandbox (toolchain/probes/vec,
-// vecre/verify_vec_h.py): every ALU macro with random registers in v0..v15 (4 cases each, every shift
+// Verified on trn3 (Neuron SDK 2.33, GPSIMD firmware 1.25.36): every ALU macro with random registers in v0..v15 (4 cases each, every shift
 // amount for GPV_SRLI16) against numpy; loads/stores round-trip local RAM and SBUF. v16..v31 untested.
 #pragma once
 

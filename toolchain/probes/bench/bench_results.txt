@@ -5,27 +5,27 @@
     [TPB4 core 0] SBUF load, 4 independent              292 cycles / op
     [TPB4 core 0] SBUF store via window (s32i)          309 cycles / op
     [TPB4 core 0] SBUF store only                        19 cycles / op
-    [TPB4 core 0] SBUF load 8-bit (l8ui)                299 cycles / op
+    [TPB4 core 0] SBUF load 8-bit (l8ui)                298 cycles / op
     [TPB4 core 0] HBM load via window                   389 cycles / op
-    [TPB4 core 0] HBM load, stride 4 KB                 430 cycles / op
-    [TPB4 core 0] HBM store via window                  144 cycles / op
-    [TPB4 core 0] iDMA SBUF->local 16 KB (per KB)       128 cycles / op
+    [TPB4 core 0] HBM load, stride 4 KB                 433 cycles / op
+    [TPB4 core 0] HBM store via window                  142 cycles / op
+    [TPB4 core 0] iDMA SBUF->local 16 KB (per KB)       130 cycles / op
     [TPB4 core 0] iDMA local->SBUF 16 KB (per KB)        73 cycles / op
-    [TPB4 core 0] iDMA 16 partitions x 1 KB, 2D (per KB)     68 cycles / op
-    [TPB4 core 0] iDMA SBUF->SBUF 16 KB (per KB)         93 cycles / op
-    [TPB4 core 0] iDMA HBM->local 16 KB (per KB)        174 cycles / op
-    [TPB4 core 0] iDMA 4 KB SBUF->local, one transfer    606 cycles / op
-    [TPB4 core 0] iDMA 16 B SBUF->local, one transfer    442 cycles / op
-    [TPB4 core 0] soft-float add                        142 cycles / op
-    [TPB4 core 0] soft-float mul                        148 cycles / op
-    [TPB4 core 0] soft-float div                        299 cycles / op
-    [TPB4 core 0] soft-float sqrt                       528 cycles / op
-    [TPB4 core 0] soft-float fma                        297 cycles / op
-    [TPB4 core 0] math::exp                            3358 cycles / op
-    [TPB4 core 0] math::tanh                           4356 cycles / op
+    [TPB4 core 0] iDMA 16 partitions x 1 KB, 2D (per KB)     69 cycles / op
+    [TPB4 core 0] iDMA SBUF->SBUF 16 KB (per KB)         91 cycles / op
+    [TPB4 core 0] iDMA HBM->local 16 KB (per KB)        168 cycles / op
+    [TPB4 core 0] iDMA 4 KB SBUF->local, one transfer    575 cycles / op
+    [TPB4 core 0] iDMA 16 B SBUF->local, one transfer    472 cycles / op
+    [TPB4 core 0] soft-float add                        117 cycles / op
+    [TPB4 core 0] soft-float mul                         97 cycles / op
+    [TPB4 core 0] soft-float div                        305 cycles / op
+    [TPB4 core 0] soft-float sqrt                       501 cycles / op
+    [TPB4 core 0] soft-float fma                        238 cycles / op
+    [TPB4 core 0] math::exp                            2684 cycles / op
+    [TPB4 core 0] math::tanh                           3563 cycles / op
     [TPB4 core 0] int32 divide (quou)                    20 cycles / op
     [TPB4 core 0] int32 multiply (mull)                   3 cycles / op
-    [TPB4 core 0] barrier (8 cores)                    4606 cycles / op
-    [TPB4 core 0] lock+unlock (8 cores contending)    21941 cycles / op
-    [TPB4 core 0] allreduce_add (8 cores)              5484 cycles / op
+    [TPB4 core 0] barrier (8 cores)                    2996 cycles / op
+    [TPB4 core 0] lock+unlock (8 cores contending)    21718 cycles / op
+    [TPB4 core 0] allreduce_add (8 cores)              3590 cycles / op
 RESULT: PASS

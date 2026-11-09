@@ -11,13 +11,13 @@ kernel.neff + ops.so ──gpsimd-neff inject──► final.neff ──gpsimd-r
 ```
 
 Everything was reverse-engineered on trn3 (SDK 2.33: neuronx-cc 2.28, NKI 0.7, libnrt 2.35, GPSIMD
-firmware 1.25.36); see `../PROGRESS.md` for the findings this builds on.
+firmware 1.25.36).
 
 ## Quick start
 
 ```bash
-cd ~/trn3-gpsimd-re/toolchain
-./run_examples.sh                    # build + run all 19 examples (~4 min), prints a PASS/FAIL table
+cd ~/neuron-gpsimd-tool/toolchain
+./run_examples.sh                    # build + run all 20 examples (~4 min), prints a PASS/FAIL table
 ./run_examples.sh vadd_i32           # one example
 bin/gpsimd-build examples/vadd_i32   # build only -> examples/vadd_i32/build/final.neff
 bin/gpsimd-run-example examples/vadd_i32/build --receipts --logs
@@ -112,9 +112,6 @@ posted; the runtime orders memory where it matters (barrier, lock, iDMA submissi
 | `run_examples.sh` | build + run all examples |
 | `tests/softfloat_test.c` | host test: soft-float vs x86 hardware (33 M checks) |
 | `probes/bench` | cycle costs (memory spaces, soft-float, cooperation): `bin/gpsimd-build probes/bench && bin/gpsimd-run-example probes/bench/build --logs` |
-| `probes/excl` | shows that exclusive-access atomics (L32EX/S32EX) hang (expect an execution timeout) |
-| `probes/mem2`, `probes/idma` | window access without `memw`; iDMA discovery and the firmware-state restore experiments (`MODE=0..4`) |
-| `isa/`, `re/` | earlier experiments (fixed-operand ISA probe, marker-placement studies), superseded by `examples/` |
 
 ## How it works
 
@@ -205,11 +202,11 @@ Cycle costs (`probes/bench`, core 0 while all 8 cores run the same loop):
 | iDMA SBUF → local, per KB (16 KB transfer) | 128 |
 | iDMA local → SBUF, SBUF → SBUF, HBM → local, per KB | 73, 93, 174 |
 | iDMA 2D, 16 partitions × 1 KB, per KB | 68 |
-| iDMA fixed cost per transfer (16 B / 4 KB) | ~440 / ~600 |
+| iDMA fixed cost per transfer (16 B / 4 KB) | ~470 / ~580 |
 | soft-float add, mul, div, sqrt, fma | 117, 97, 299, 501, 238 |
 | `math::exp`, `math::tanh` | ~2600, ~3600 |
 | int32 divide, multiply | 20, 3 |
-| barrier, all-reduce (8 cores) | ~4600, ~5500 |
+| barrier, all-reduce (8 cores) | ~3000, ~3600 |
 | lock + unlock, 8 cores contending | ~22000 |
 
 Rules of thumb: move tile data with the iDMA in blocks (`c.fetch` / `c.flush`, a few KB or more per
@@ -247,7 +244,7 @@ Float-heavy operators are now bound by soft-float arithmetic (~100–300 cycles 
 
 The trn3 GPSIMD cores have a 512-bit vector unit, but the SDK ships no Xtensa configuration for the trn3
 core, so the compiler cannot emit vector code. `include/gpsimd/vec.h` provides reverse-engineered vector
-instructions as raw bundles (see `../vecre/README.md` for how they were found and verified):
+instructions as raw bundles:
 
 ```cpp
 #include <gpsimd/vec.h>

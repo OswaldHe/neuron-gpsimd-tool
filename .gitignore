@@ -15,7 +15,6 @@ nkiopt/cases/*/data/
 *.a
 *.nm
 *.elf
-tools/xslot
 
 # Arrays / tensors staged for runs
 *.npy
@@ -29,21 +28,10 @@ logs/
 # ---------------------------------------------------------------------------
 # Third-party checkouts (nested git repos; clone them separately)
 #   ext/vllm-neuron      https://github.com/OswaldHe/vllm-neuron (deepseek_v41_trn3)
-#   re/neuron-neff-doc
 # The DeepSeek cases carry verbatim copies of the few helper modules they use
 # (nkiopt/cases/ds41_*/ds41?/, Apache-2.0, origin commit in ds41k/SOURCE).
 # ---------------------------------------------------------------------------
 ext/
-re/neuron-neff-doc/
-
-# ---------------------------------------------------------------------------
-# Material extracted from the AWS Neuron SDK / device (firmware dumps,
-# runtime disassembly, SDK ELFs and NEFFs). Proprietary, and nrt.dis exceeds
-# GitHub's 100 MB file limit; regenerate locally with the tools/ scripts.
-# ---------------------------------------------------------------------------
-re/fw/
-re/*.bin
-re/*.dis
 
 # ---------------------------------------------------------------------------
 # Python / editors / OS
